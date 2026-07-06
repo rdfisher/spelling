@@ -134,6 +134,7 @@ function startWord(wordObj) {
 
 function renderWord() {
   const container = document.getElementById("letter-boxes");
+  container.style.setProperty("--letter-count", currentWord.word.length);
   container.innerHTML = "";
   for (let i = 0; i < currentWord.word.length; i++) {
     const box = document.createElement("div");
