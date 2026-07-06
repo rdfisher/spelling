@@ -224,6 +224,7 @@ function completeWord() {
   saveProgress();
   updateScoreboard(score);
   document.getElementById("feedback").textContent = `Great job! Score: ${score}`;
+  showScoreFace(score);
   lastWord = currentWord;
 
   if (unlockedNewTier) {
@@ -247,6 +248,20 @@ function updateScoreboard(lastScore) {
 
 function updateTierBadge() {
   document.getElementById("tier-badge").textContent = `Tier ${currentWord.tier}`;
+}
+
+function getFaceForScore(score) {
+  if (score === 100) return "assets/images/face-great.svg";
+  if (score >= 70) return "assets/images/face-good.svg";
+  if (score >= 40) return "assets/images/face-okay.svg";
+  return "assets/images/face-sad.svg";
+}
+
+function showScoreFace(score) {
+  const overlay = document.getElementById("score-face-overlay");
+  document.getElementById("score-face-image").src = getFaceForScore(score);
+  overlay.classList.remove("hidden");
+  setTimeout(() => overlay.classList.add("hidden"), 1000);
 }
 
 function showTierUnlockBanner() {
