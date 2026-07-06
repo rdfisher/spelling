@@ -1,12 +1,14 @@
 const STORAGE_KEY = "spelling-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 3;
+const MAX_MISSES_PER_LETTER = 3;
 const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
 
 let progress = loadProgress();
 let currentWord = null;
 let currentIndex = 0;
 let wrongGuesses = 0;
+let letterMisses = 0;
 let lastWord = null;
 let locked = false;
 let audioCtx = null;
@@ -118,6 +120,7 @@ function startWord(wordObj) {
   currentWord = wordObj;
   currentIndex = 0;
   wrongGuesses = 0;
+  letterMisses = 0;
   locked = false;
   document.getElementById("word-image").src = wordObj.image;
   document.getElementById("word-image").alt = wordObj.word;
@@ -164,17 +167,32 @@ function submitLetter(key) {
   const got = key.toLowerCase();
 
   if (got === expected) {
-    currentIndex++;
-    playCorrectSound();
-    renderWord();
-    flashBox(currentIndex - 1, "correct");
-    if (currentIndex === currentWord.word.length) {
-      completeWord();
-    }
-  } else {
-    wrongGuesses++;
-    playWrongSound();
-    flashBox(currentIndex, "wrong");
+    advanceLetter();
+    return;
+  }
+
+  wrongGuesses++;
+  letterMisses++;
+  playWrongSound();
+  flashBox(currentIndex, "wrong");
+
+  if (letterMisses >= MAX_MISSES_PER_LETTER) {
+    // Miles has missed this letter too many times in a row - fill it in for
+    // him so he doesn't get stuck, and say the word again as a reminder.
+    // The misses already counted above still count against his score.
+    advanceLetter();
+    if (!locked) speakWord();
+  }
+}
+
+function advanceLetter() {
+  currentIndex++;
+  letterMisses = 0;
+  playCorrectSound();
+  renderWord();
+  flashBox(currentIndex - 1, "correct");
+  if (currentIndex === currentWord.word.length) {
+    completeWord();
   }
 }
 
