@@ -11,6 +11,7 @@ let lastWord = null;
 let locked = false;
 let audioCtx = null;
 let autoSpeakTimer = null;
+let speechUnlocked = false;
 
 function loadProgress() {
   try {
@@ -74,13 +75,36 @@ function playWordCompleteFanfare() {
   playTone(1046.5, 0.35, "sine", 0.3, 0.22);
 }
 
+function unlockSpeech() {
+  // Some browsers (notably iOS Safari) only allow speechSynthesis.speak() to
+  // produce sound if a speak() call has happened synchronously inside a user
+  // gesture at least once. Our automatic speech fires from a setTimeout, which
+  // doesn't count as a gesture, so we "unlock" it here on the first real
+  // keypress/tap and let later calls (sync or async) work normally after that.
+  if (speechUnlocked || !("speechSynthesis" in window)) return;
+  speechUnlocked = true;
+  const utter = new SpeechSynthesisUtterance(" ");
+  utter.volume = 0;
+  window.speechSynthesis.speak(utter);
+}
+
 function speakWord() {
   if (!currentWord || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(currentWord.word);
-  utter.rate = 0.8;
-  utter.pitch = 1.1;
-  window.speechSynthesis.speak(utter);
+  const synth = window.speechSynthesis;
+  const doSpeak = () => {
+    const utter = new SpeechSynthesisUtterance(currentWord.word);
+    utter.rate = 0.8;
+    utter.pitch = 1.1;
+    synth.cancel();
+    synth.speak(utter);
+  };
+  // Chrome sometimes hasn't loaded its voice list yet on the very first
+  // call, and silently drops speak() calls made before it's ready.
+  if (synth.getVoices().length === 0) {
+    synth.addEventListener("voiceschanged", doSpeak, { once: true });
+  } else {
+    doSpeak();
+  }
 }
 
 function pickNextWord() {
@@ -255,6 +279,9 @@ function init() {
   document.getElementById("hear-btn").addEventListener("click", speakWord);
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
   window.addEventListener("keydown", handleKeydown);
+  ["keydown", "pointerdown", "touchstart"].forEach((evt) =>
+    window.addEventListener(evt, unlockSpeech, { once: true })
+  );
   buildOnscreenKeyboard();
   updateScoreboard(null);
   startWord(pickNextWord());
