@@ -3,6 +3,14 @@ const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 3;
 const MAX_MISSES_PER_LETTER = 3;
 const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
+// Word-pick weighting: each tier below the current top tier gets weight
+// (tierDecay ^ tiersBelowTop). At BASE_TIER_DECAY, lower tiers are less
+// likely than the top tier (favors newer/harder words). As recentStruggle
+// rises toward 1, the effective decay rises toward MAX_TIER_DECAY, flipping
+// the bias so easier/lower tiers become more likely (favors review/confidence).
+const BASE_TIER_DECAY = 0.5;
+const MAX_TIER_DECAY = 2.0;
+const STRUGGLE_EMA_ALPHA = 0.25;
 
 let progress = loadProgress();
 let currentWord = null;
@@ -18,13 +26,21 @@ let speechUnlocked = false;
 function loadProgress() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const loaded = JSON.parse(raw);
+      // Clamp in case a tier restructure since this was saved left
+      // unlockedTier pointing past the current highest tier.
+      loaded.unlockedTier = Math.min(loaded.unlockedTier, MAX_TIER);
+      loaded.recentStruggle = loaded.recentStruggle ?? 0;
+      return loaded;
+    }
   } catch (e) {
     // ignore corrupt/unavailable storage, start fresh
   }
   return {
     unlockedTier: 1,
     tierStreak: 0,
+    recentStruggle: 0,
     bestScores: {},
     totalWordsCompleted: 0,
     totalScoreSum: 0,
@@ -113,7 +129,17 @@ function pickNextWord() {
   const pool = WORDS.filter(
     (w) => w.tier <= progress.unlockedTier && (!lastWord || w.word !== lastWord.word)
   );
-  return pool[Math.floor(Math.random() * pool.length)];
+
+  const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
+  const weights = pool.map((w) => Math.pow(decay, progress.unlockedTier - w.tier));
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+
+  let r = Math.random() * totalWeight;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
 }
 
 function startWord(wordObj) {
@@ -209,10 +235,20 @@ function completeWord() {
   const prevBest = progress.bestScores[currentWord.word] || 0;
   if (score > prevBest) progress.bestScores[currentWord.word] = score;
 
-  if (score >= UNLOCK_THRESHOLD_SCORE) {
-    progress.tierStreak = (progress.tierStreak || 0) + 1;
-  } else {
-    progress.tierStreak = 0;
+  const failed = score < UNLOCK_THRESHOLD_SCORE ? 1 : 0;
+  progress.recentStruggle =
+    progress.recentStruggle * (1 - STRUGGLE_EMA_ALPHA) + failed * STRUGGLE_EMA_ALPHA;
+
+  // Only words at the highest currently-unlocked tier count toward
+  // unlocking the next one - practicing/reviewing lower tiers (which
+  // happens more often now that they're weighted in) shouldn't help or
+  // hurt progress toward the next tier.
+  if (currentWord.tier === progress.unlockedTier) {
+    if (score >= UNLOCK_THRESHOLD_SCORE) {
+      progress.tierStreak = (progress.tierStreak || 0) + 1;
+    } else {
+      progress.tierStreak = 0;
+    }
   }
 
   let unlockedNewTier = false;
@@ -280,6 +316,7 @@ function resetProgress() {
   progress = {
     unlockedTier: 1,
     tierStreak: 0,
+    recentStruggle: 0,
     bestScores: {},
     totalWordsCompleted: 0,
     totalScoreSum: 0,
