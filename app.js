@@ -10,6 +10,7 @@ let wrongGuesses = 0;
 let lastWord = null;
 let locked = false;
 let audioCtx = null;
+let autoSpeakTimer = null;
 
 function loadProgress() {
   try {
@@ -99,6 +100,9 @@ function startWord(wordObj) {
   document.getElementById("feedback").textContent = "";
   renderWord();
   updateTierBadge();
+
+  clearTimeout(autoSpeakTimer);
+  autoSpeakTimer = setTimeout(speakWord, 1000);
 }
 
 function renderWord() {
