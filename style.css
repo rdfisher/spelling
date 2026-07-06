@@ -202,6 +202,26 @@ footer {
   display: none;
 }
 
+#score-face-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.97);
+  z-index: 25;
+}
+
+#score-face-overlay.hidden {
+  display: none;
+}
+
+#score-face-image {
+  width: min(55vw, 300px);
+  height: min(55vw, 300px);
+  animation: pop 0.4s ease;
+}
+
 #start-overlay {
   position: fixed;
   inset: 0;
