@@ -125,9 +125,12 @@ function flashBox(index, kind) {
 }
 
 function handleKeydown(e) {
+  if (!/^[a-zA-Z]$/.test(e.key)) return;
+  submitLetter(e.key);
+}
+
+function submitLetter(key) {
   if (!currentWord || locked) return;
-  const key = e.key;
-  if (!/^[a-zA-Z]$/.test(key)) return;
 
   const expected = currentWord.word[currentIndex].toLowerCase();
   const got = key.toLowerCase();
@@ -225,10 +228,30 @@ function resetProgress() {
   startWord(pickNextWord());
 }
 
+const KEYBOARD_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
+
+function buildOnscreenKeyboard() {
+  const container = document.getElementById("onscreen-keyboard");
+  KEYBOARD_ROWS.forEach((row) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "keyboard-row";
+    row.split("").forEach((letter) => {
+      const key = document.createElement("button");
+      key.type = "button";
+      key.className = "key";
+      key.textContent = letter;
+      key.addEventListener("click", () => submitLetter(letter));
+      rowEl.appendChild(key);
+    });
+    container.appendChild(rowEl);
+  });
+}
+
 function init() {
   document.getElementById("hear-btn").addEventListener("click", speakWord);
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
   window.addEventListener("keydown", handleKeydown);
+  buildOnscreenKeyboard();
   updateScoreboard(null);
   startWord(pickNextWord());
 }
