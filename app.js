@@ -275,16 +275,22 @@ function buildOnscreenKeyboard() {
   });
 }
 
+function startGame() {
+  document.getElementById("start-overlay").classList.add("hidden");
+  // Unlocking speech synchronously inside this click handler (rather than
+  // waiting for the first in-game keypress) means even the very first word's
+  // auto-speak timer - which fires shortly after this - is able to produce sound.
+  unlockSpeech();
+  startWord(pickNextWord());
+}
+
 function init() {
   document.getElementById("hear-btn").addEventListener("click", speakWord);
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
+  document.getElementById("start-btn").addEventListener("click", startGame);
   window.addEventListener("keydown", handleKeydown);
-  ["keydown", "pointerdown", "touchstart"].forEach((evt) =>
-    window.addEventListener(evt, unlockSpeech, { once: true })
-  );
   buildOnscreenKeyboard();
   updateScoreboard(null);
-  startWord(pickNextWord());
 }
 
 init();
