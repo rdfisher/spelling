@@ -202,6 +202,36 @@ footer {
   display: none;
 }
 
+#start-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, var(--bg-start), var(--bg-end));
+  z-index: 20;
+}
+
+#start-btn {
+  font-size: clamp(1.4rem, 6vw, 2rem);
+  font-weight: 800;
+  color: white;
+  background: var(--accent);
+  border: none;
+  border-radius: 999px;
+  padding: 1.2rem 2.4rem;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+#start-btn:active {
+  transform: scale(0.96);
+}
+
+#start-overlay.hidden {
+  display: none;
+}
+
 #onscreen-keyboard {
   display: none;
   flex-direction: column;
