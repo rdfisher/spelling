@@ -197,3 +197,43 @@ footer {
 .hidden {
   display: none;
 }
+
+#onscreen-keyboard {
+  display: none;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.keyboard-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.3rem;
+}
+
+.key {
+  flex: 1 1 auto;
+  max-width: 2.6rem;
+  height: 2.8rem;
+  border: none;
+  border-radius: 10px;
+  background: #eef1fb;
+  color: #5b3fd6;
+  font-size: 1.1rem;
+  font-weight: 700;
+  box-shadow: 0 3px 0 #d3d8ee;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.key:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #d3d8ee;
+  background: #dde3fb;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #onscreen-keyboard {
+    display: flex;
+  }
+}
