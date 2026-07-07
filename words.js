@@ -1,4 +1,4 @@
-// Word list for Miles's Spelling Game.
+// Word list for Miles' Spelling Game.
 // tier 1 = 3-4 letter, tier 2 = 5-6 letter,
 // tier 3 = 7-8 letter, tier 4 = 9-10 letter words.
 // Images: Twemoji (CC-BY 4.0) - see ATTRIBUTIONS.md
