@@ -184,10 +184,21 @@ function flashBox(index, kind) {
 
 function handleKeydown(e) {
   if (!/^[a-zA-Z]$/.test(e.key)) return;
-  submitLetter(e.key);
+  submitLetter(e.key, false);
 }
 
-function submitLetter(key) {
+function isAdjacentKey(pressed, expected) {
+  const pressedUpper = pressed.toUpperCase();
+  const expectedUpper = expected.toUpperCase();
+  for (const row of KEYBOARD_ROWS) {
+    const idx = row.indexOf(expectedUpper);
+    if (idx === -1) continue;
+    return row[idx - 1] === pressedUpper || row[idx + 1] === pressedUpper;
+  }
+  return false;
+}
+
+function submitLetter(key, viaOnScreenKeyboard) {
   if (!currentWord || locked) return;
 
   const expected = currentWord.word[currentIndex].toLowerCase();
@@ -195,6 +206,15 @@ function submitLetter(key) {
 
   if (got === expected) {
     advanceLetter();
+    return;
+  }
+
+  // A tap on the on-screen keyboard that lands on a key next to the right
+  // one is likely a fat-finger slip, not a real mistake - play the same
+  // sound so it's clear that wasn't the letter, but don't penalize it.
+  // Physical keyboard presses don't get this forgiveness.
+  if (viaOnScreenKeyboard && isAdjacentKey(got, expected)) {
+    playWrongSound();
     return;
   }
 
@@ -339,7 +359,7 @@ function buildOnscreenKeyboard() {
       key.type = "button";
       key.className = "key";
       key.textContent = letter;
-      key.addEventListener("click", () => submitLetter(letter));
+      key.addEventListener("click", () => submitLetter(letter, true));
       rowEl.appendChild(key);
     });
     container.appendChild(rowEl);
