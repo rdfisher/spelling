@@ -2,6 +2,7 @@ const STORAGE_KEY = "spelling-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 3;
 const MAX_MISSES_PER_LETTER = 3;
+const SAD_FACE_THRESHOLD = 40;
 const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
 // Word-pick weighting: each tier below the current top tier gets weight
 // (tierDecay ^ tiersBelowTop). At BASE_TIER_DECAY, lower tiers are less
@@ -125,9 +126,9 @@ function speakWord() {
   }
 }
 
-function pickNextWord() {
+function pickNextWord(maxTier = progress.unlockedTier) {
   const pool = WORDS.filter(
-    (w) => w.tier <= progress.unlockedTier && (!lastWord || w.word !== lastWord.word)
+    (w) => w.tier <= maxTier && (!lastWord || w.word !== lastWord.word)
   );
 
   const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
@@ -280,16 +281,28 @@ function completeWord() {
 
   saveProgress();
   updateScoreboard(score);
-  document.getElementById("feedback").textContent = `Great job! Score: ${score}`;
-  showScoreFace(score);
   lastWord = currentWord;
+
+  // A sad-face score is discouraging to see, so skip the overlay entirely and
+  // quietly move on - and make the next word an easier one by keeping it
+  // below the highest unlocked tier (unless only tier 1 is unlocked).
+  const sadFace = score < SAD_FACE_THRESHOLD;
+  if (sadFace) {
+    document.getElementById("feedback").textContent = "";
+  } else {
+    document.getElementById("feedback").textContent = `Great job! Score: ${score}`;
+    showScoreFace(score);
+  }
 
   if (unlockedNewTier) {
     showTierUnlockBanner();
   }
 
+  const nextMaxTier = sadFace
+    ? Math.max(1, progress.unlockedTier - 1)
+    : progress.unlockedTier;
   setTimeout(() => {
-    startWord(pickNextWord());
+    startWord(pickNextWord(nextMaxTier));
   }, unlockedNewTier ? 2200 : 1300);
 }
 
@@ -310,7 +323,7 @@ function updateTierBadge() {
 function getFaceForScore(score) {
   if (score === 100) return "assets/images/face-great.svg";
   if (score >= 70) return "assets/images/face-good.svg";
-  if (score >= 40) return "assets/images/face-okay.svg";
+  if (score >= SAD_FACE_THRESHOLD) return "assets/images/face-okay.svg";
   return "assets/images/face-sad.svg";
 }
 
