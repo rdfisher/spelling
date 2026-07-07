@@ -257,6 +257,10 @@ footer {
 }
 
 #onscreen-keyboard {
+  /* Sized off the longest row (10 keys, QWERTYUIOP) so every key across
+     every row is the same width - shorter rows just end up centered
+     with more side padding, like a real keyboard. */
+  --key-size: clamp(1.8rem, calc((var(--inner-width) - 2.7rem) / 10), 3.4rem);
   display: none;
   flex-direction: column;
   gap: 0.4rem;
@@ -270,14 +274,14 @@ footer {
 }
 
 .key {
-  flex: 1 1 auto;
-  max-width: 2.6rem;
-  height: 2.8rem;
+  flex: 0 0 var(--key-size);
+  width: var(--key-size);
+  height: calc(var(--key-size) * 1.05);
   border: none;
   border-radius: 10px;
   background: #eef1fb;
   color: #5b3fd6;
-  font-size: 1.1rem;
+  font-size: calc(var(--key-size) * 0.42);
   font-weight: 700;
   box-shadow: 0 3px 0 #d3d8ee;
   touch-action: manipulation;
