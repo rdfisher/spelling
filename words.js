@@ -58,7 +58,6 @@ const WORDS = [
   { word: "shark", tier: 2, image: "assets/images/shark.svg" },
   { word: "mouse", tier: 2, image: "assets/images/mouse.svg" },
   { word: "rabbit", tier: 2, image: "assets/images/rabbit.svg" },
-  { word: "turtle", tier: 2, image: "assets/images/turtle.svg" },
   { word: "parrot", tier: 2, image: "assets/images/parrot.svg" },
   { word: "spider", tier: 2, image: "assets/images/spider.svg" },
   { word: "banana", tier: 2, image: "assets/images/banana.svg" },
@@ -79,6 +78,7 @@ const WORDS = [
   { word: "squirrel", tier: 3, image: "assets/images/squirrel.svg" },
   { word: "scooter", tier: 3, image: "assets/images/scooter.svg" },
   { word: "dinosaur", tier: 3, image: "assets/images/dinosaur.svg" },
+  { word: "tortoise", tier: 3, image: "assets/images/tortoise.svg" },
 
   { word: "chocolate", tier: 4, image: "assets/images/chocolate.svg" },
   { word: "spaghetti", tier: 4, image: "assets/images/spaghetti.svg" },
