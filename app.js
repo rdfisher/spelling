@@ -1,6 +1,6 @@
 const STORAGE_KEY = "spelling-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
-const WORDS_TO_UNLOCK = 3;
+const WORDS_TO_UNLOCK = 6;
 const MAX_MISSES_PER_LETTER = 3;
 const SAD_FACE_THRESHOLD = 40;
 const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
@@ -240,7 +240,11 @@ function advanceLetter() {
   renderWord();
   flashBox(currentIndex - 1, "correct");
   if (currentIndex === currentWord.word.length) {
-    completeWord();
+    // Lock input and let the finished word sit on screen for a beat before
+    // the fanfare/score face takes over, so it doesn't vanish the instant
+    // the last letter lands.
+    locked = true;
+    setTimeout(completeWord, 500);
   }
 }
 
