@@ -3,7 +3,20 @@ const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
 const MAX_MISSES_PER_LETTER = 3;
 const SAD_FACE_THRESHOLD = 40;
-const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
+
+// A word's difficulty tier is purely a function of its length. This is the
+// single place the tier rules live - change these thresholds and every word
+// re-tiers automatically (words.js is just data, no per-word tier field).
+function tierForWord(word) {
+  const n = word.length;
+  if (n <= 3) return 1;
+  if (n === 4) return 2;
+  if (n === 5) return 3;
+  if (n <= 7) return 4;
+  return 5;
+}
+
+const MAX_TIER = Math.max(...WORDS.map((w) => tierForWord(w.word)));
 // Word-pick weighting: each tier below the current top tier gets weight
 // (tierDecay ^ tiersBelowTop). At BASE_TIER_DECAY, lower tiers are less
 // likely than the top tier (favors newer/harder words). As recentStruggle
@@ -128,11 +141,11 @@ function speakWord() {
 
 function pickNextWord(maxTier = progress.unlockedTier) {
   const pool = WORDS.filter(
-    (w) => w.tier <= maxTier && (!lastWord || w.word !== lastWord.word)
+    (w) => tierForWord(w.word) <= maxTier && (!lastWord || w.word !== lastWord.word)
   );
 
   const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
-  const weights = pool.map((w) => Math.pow(decay, progress.unlockedTier - w.tier));
+  const weights = pool.map((w) => Math.pow(decay, progress.unlockedTier - tierForWord(w.word)));
   const totalWeight = weights.reduce((sum, w) => sum + w, 0);
 
   let r = Math.random() * totalWeight;
@@ -268,7 +281,7 @@ function completeWord() {
   // unlocking the next one - practicing/reviewing lower tiers (which
   // happens more often now that they're weighted in) shouldn't help or
   // hurt progress toward the next tier.
-  if (currentWord.tier === progress.unlockedTier) {
+  if (tierForWord(currentWord.word) === progress.unlockedTier) {
     if (score >= UNLOCK_THRESHOLD_SCORE) {
       progress.tierStreak = (progress.tierStreak || 0) + 1;
     } else {
@@ -321,7 +334,7 @@ function updateScoreboard(lastScore) {
 }
 
 function updateTierBadge() {
-  document.getElementById("tier-badge").textContent = `Tier ${currentWord.tier}`;
+  document.getElementById("tier-badge").textContent = `Tier ${tierForWord(currentWord.word)}`;
 }
 
 function getFaceForScore(score) {
