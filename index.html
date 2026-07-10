@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Miles' Spelling Game</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔤</text></svg>">
-<link rel="stylesheet" href="style.css?v=23">
+<link rel="stylesheet" href="style.css?v=24">
 </head>
 <body>
 
@@ -16,8 +16,15 @@
 </div>
 
 <div id="start-overlay">
-  <button id="spell-btn" class="start-choice">✏️ Spell</button>
-  <button id="read-btn" class="start-choice read">📖 Read</button>
+  <div id="preload">
+    <div id="preload-label">Loading pictures…</div>
+    <div id="preload-bar"><div id="preload-fill"></div></div>
+    <div id="preload-count"></div>
+  </div>
+  <div id="start-buttons" class="hidden">
+    <button id="spell-btn" class="start-choice">✏️ Spell</button>
+    <button id="read-btn" class="start-choice read">📖 Read</button>
+  </div>
 </div>
 
 <div id="summary-overlay" class="hidden">
@@ -78,7 +85,7 @@
   </footer>
 </div>
 
-<script src="words.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="words.js?v=24"></script>
+<script src="app.js?v=24"></script>
 </body>
 </html>

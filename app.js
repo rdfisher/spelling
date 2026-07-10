@@ -669,6 +669,59 @@ function completeReadRound() {
   }, delay);
 }
 
+// Face reaction images aren't in WORDS but are needed during play, so preload
+// them too - a network drop mid-game shouldn't leave a blank score face.
+const FACE_IMAGES = [
+  "assets/images/face-great.svg",
+  "assets/images/face-good.svg",
+  "assets/images/face-okay.svg",
+  "assets/images/face-sad.svg",
+];
+
+// Fetch every picture up front (into the browser cache) behind a progress bar,
+// so once loading finishes the game plays with no further network needed - the
+// point being to load everything while there's signal (e.g. before a train)
+// and keep working when it drops. Images pull from cache during play because
+// the game uses the same URLs. Failed loads retry a few times, then give up so
+// the bar can't stall on one bad picture.
+function preloadImages(onComplete) {
+  const urls = [...new Set([...WORDS.map((w) => w.image), ...FACE_IMAGES])];
+  const total = urls.length;
+  let settled = 0;
+  const fill = document.getElementById("preload-fill");
+  const count = document.getElementById("preload-count");
+
+  const update = () => {
+    fill.style.width = Math.round((settled / total) * 100) + "%";
+    count.textContent = `${settled} / ${total}`;
+  };
+  const settle = () => {
+    settled++;
+    update();
+    if (settled === total) onComplete();
+  };
+  update();
+
+  urls.forEach((url) => {
+    let tries = 0;
+    const attempt = () => {
+      const img = new Image();
+      img.onload = settle;
+      img.onerror = () => {
+        if (++tries < 3) setTimeout(attempt, 600);
+        else settle();
+      };
+      img.src = url;
+    };
+    attempt();
+  });
+}
+
+function onPreloadDone() {
+  document.getElementById("preload").classList.add("hidden");
+  document.getElementById("start-buttons").classList.remove("hidden");
+}
+
 function init() {
   document.getElementById("hear-btn").addEventListener("click", speakWord);
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
@@ -679,6 +732,7 @@ function init() {
   window.addEventListener("keydown", handleKeydown);
   buildOnscreenKeyboard();
   updateScoreboard(null);
+  preloadImages(onPreloadDone);
 }
 
 init();
