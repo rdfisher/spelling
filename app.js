@@ -649,6 +649,7 @@ function startReadRound(maxTier = progress.unlockedTier) {
   updateTierBadge();
   activeFeedbackEl().textContent = "";
   document.getElementById("read-word").textContent = readTarget.word;
+  flashReadWord();
 
   const container = document.getElementById("read-choices");
   container.innerHTML = "";
@@ -682,11 +683,22 @@ function handleReadChoice(word, btn) {
 
   // Wrong pick: penalize, grey it out so it can't be tapped again, and let
   // the child keep trying the remaining tiles until they find the right one.
+  // Re-flash the word too, to pull attention back to reading it.
   readWrongTaps++;
   playWrongSound();
   btn.classList.add("wrong");
   btn.disabled = true;
   setTimeout(() => btn.classList.remove("wrong"), 400);
+  flashReadWord();
+}
+
+// Restart the word's attention pulse. Removing the class and forcing a reflow
+// before re-adding it lets the CSS animation replay on demand (mid-round).
+function flashReadWord() {
+  const el = document.getElementById("read-word");
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
 }
 
 function completeReadRound() {
