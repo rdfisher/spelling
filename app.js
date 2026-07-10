@@ -4,6 +4,10 @@ const SPELL_STORAGE_KEY = "spelling-game-progress-v1";
 const READ_STORAGE_KEY = "reading-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
+// A missed top-tier word chips this much off the unlock streak instead of
+// zeroing it, so one unlucky slip at the (rare, hard) frontier doesn't wipe out
+// several games' worth of accumulated progress.
+const STREAK_MISS_PENALTY = 2;
 const MAX_MISSES_PER_LETTER = 3;
 const SAD_FACE_THRESHOLD = 40;
 // A game runs for this many turns and then ends with a summary screen. The
@@ -33,6 +37,14 @@ const MAX_TIER = Math.max(...WORDS.map((w) => tierForWord(w.word)));
 const BASE_TIER_DECAY = 0.5;
 const MAX_TIER_DECAY = 2.0;
 const STRUGGLE_EMA_ALPHA = 0.25;
+// Fraction of normal picks reserved for the current top tier. Without this, the
+// growing stack of unlocked lower tiers crowds out the single top tier, so a
+// player at a high tier rarely sees enough top-tier words in a 10-turn game to
+// build the unlock streak. Pinning the top tier to a fixed share keeps top-tier
+// exposure at ~WORDS_TO_UNLOCK per game at every tier. The share slides from MAX
+// (confident) down to MIN as recentStruggle rises, bringing back easier review.
+const TOP_TIER_SHARE_MAX = 0.65;
+const TOP_TIER_SHARE_MIN = 0.4;
 
 // "spell" | "read" - chosen from the start overlay. The active mode's progress
 // object is aliased as `progress` so the shared bookkeeping helpers work
@@ -169,21 +181,51 @@ function speakWord() {
   }
 }
 
+function weightedChoice(items, weights) {
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  let r = Math.random() * totalWeight;
+  for (let i = 0; i < items.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return items[i];
+  }
+  return items[items.length - 1];
+}
+
+function pickFromTier(tier) {
+  let pool = WORDS.filter(
+    (w) => tierForWord(w.word) === tier && (!lastWord || w.word !== lastWord.word)
+  );
+  // Every tier has plenty of words, but guard against a tier of one that's also
+  // the last word, so we never index into an empty pool.
+  if (pool.length === 0) pool = WORDS.filter((w) => tierForWord(w.word) === tier);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function pickNextWord(maxTier = progress.unlockedTier) {
+  const topTier = progress.unlockedTier;
+  const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
+
+  // Normal pick at the frontier: give the top tier a fixed share of picks so it
+  // isn't swamped by the accumulated lower tiers, then spread the rest across
+  // the lower tiers by the usual decay weighting. (When maxTier is below the
+  // frontier - the easier "confidence" pick after a low score - there are no
+  // top-tier words to favour, so fall through to the plain weighted pick.)
+  if (topTier > 1 && maxTier >= topTier) {
+    const share =
+      TOP_TIER_SHARE_MAX - progress.recentStruggle * (TOP_TIER_SHARE_MAX - TOP_TIER_SHARE_MIN);
+    if (Math.random() < share) return pickFromTier(topTier);
+
+    const lowerTiers = [];
+    for (let t = 1; t < topTier; t++) lowerTiers.push(t);
+    const tierWeights = lowerTiers.map((t) => Math.pow(decay, topTier - t));
+    return pickFromTier(weightedChoice(lowerTiers, tierWeights));
+  }
+
   const pool = WORDS.filter(
     (w) => tierForWord(w.word) <= maxTier && (!lastWord || w.word !== lastWord.word)
   );
-
-  const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
-  const weights = pool.map((w) => Math.pow(decay, progress.unlockedTier - tierForWord(w.word)));
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-
-  let r = Math.random() * totalWeight;
-  for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pool[i];
-  }
-  return pool[pool.length - 1];
+  const weights = pool.map((w) => Math.pow(decay, topTier - tierForWord(w.word)));
+  return weightedChoice(pool, weights);
 }
 
 function startWord(wordObj) {
@@ -329,7 +371,7 @@ function recordCompletion(score) {
     if (score >= UNLOCK_THRESHOLD_SCORE) {
       progress.tierStreak = (progress.tierStreak || 0) + 1;
     } else {
-      progress.tierStreak = 0;
+      progress.tierStreak = Math.max(0, (progress.tierStreak || 0) - STREAK_MISS_PENALTY);
     }
   }
 
