@@ -162,13 +162,20 @@ function unlockSpeech() {
   window.speechSynthesis.speak(utter);
 }
 
-function speakWord() {
-  if (!currentWord || !("speechSynthesis" in window)) return;
+function speakWord(onDone) {
+  if (!currentWord || !("speechSynthesis" in window)) {
+    if (onDone) onDone();
+    return;
+  }
   const synth = window.speechSynthesis;
   const doSpeak = () => {
     const utter = new SpeechSynthesisUtterance(currentWord.word);
     utter.rate = 0.8;
     utter.pitch = 1.1;
+    if (onDone) {
+      utter.onend = onDone;
+      utter.onerror = onDone;
+    }
     synth.cancel();
     synth.speak(utter);
   };
@@ -179,6 +186,23 @@ function speakWord() {
   } else {
     doSpeak();
   }
+}
+
+// Speak the current word, then run `after` once speech finishes. A fallback
+// timer guarantees `after` still runs if speech is unavailable or a browser
+// silently drops it (never firing onend), so the game never hangs waiting.
+function speakThen(after) {
+  let done = false;
+  const run = () => {
+    if (done) return;
+    done = true;
+    after();
+  };
+  const fallback = setTimeout(run, 2500);
+  speakWord(() => {
+    clearTimeout(fallback);
+    run();
+  });
 }
 
 function weightedChoice(items, weights) {
@@ -590,6 +614,9 @@ function startSpell() {
 function startRead() {
   setMode("read");
   document.getElementById("start-overlay").classList.add("hidden");
+  // Prime speech inside this tap so the word can be spoken on a correct answer
+  // (iOS only allows speech after a speak() call within a real user gesture).
+  unlockSpeech();
   startReadRound();
 }
 
@@ -644,9 +671,12 @@ function handleReadChoice(word, btn) {
   if (word.word === readTarget.word) {
     locked = true;
     btn.classList.add("correct");
-    playWordCompleteFanfare();
-    // Let the correct tile's highlight land before the score face takes over.
-    setTimeout(completeReadRound, 500);
+    // Say the word aloud first (reading reinforcement), then the celebration
+    // sound, then let the correct tile's highlight land before moving on.
+    speakThen(() => {
+      playWordCompleteFanfare();
+      setTimeout(completeReadRound, 500);
+    });
     return;
   }
 
