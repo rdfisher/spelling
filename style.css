@@ -53,7 +53,28 @@ header h1 {
   padding: 0.25rem 1rem;
   border-radius: 999px;
   font-size: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+#turn-progress {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
   margin-bottom: 1rem;
+  min-height: 0.7rem;
+}
+
+.turn-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: #e2e6f5;
+  transition: background 0.25s ease, transform 0.25s ease;
+}
+
+.turn-dot.done {
+  background: var(--accent);
+  transform: scale(1.1);
 }
 
 #word-row {
@@ -255,12 +276,98 @@ footer {
   background: #5b3fd6;
 }
 
+.start-choice.menu {
+  background: none;
+  color: #5b3fd6;
+  box-shadow: none;
+  font-size: clamp(1.1rem, 4.5vw, 1.4rem);
+  padding: 0.7rem 1.8rem;
+}
+
 .start-choice:active {
   transform: scale(0.96);
 }
 
 #start-overlay.hidden {
   display: none;
+}
+
+#summary-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: linear-gradient(160deg, var(--bg-start), var(--bg-end));
+  z-index: 30;
+}
+
+#summary-overlay.hidden {
+  display: none;
+}
+
+#summary-card {
+  background: var(--card-bg);
+  border-radius: 32px;
+  padding: 2rem 2.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  width: min(90vw, 440px);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#summary-face {
+  width: min(40vw, 150px);
+  height: min(40vw, 150px);
+  animation: pop 0.4s ease;
+}
+
+#summary-title {
+  font-size: clamp(1.4rem, 5vw, 2rem);
+  color: #5b3fd6;
+  margin: 0.25rem 0 0;
+}
+
+#summary-tiers {
+  color: var(--accent);
+  font-weight: 700;
+  margin: 0;
+}
+
+#summary-stats {
+  display: flex;
+  gap: 2.5rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.summary-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-stat span {
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--correct);
+  line-height: 1;
+}
+
+.summary-stat small {
+  font-size: 0.85rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+#summary-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
 }
 
 #read-prompt {

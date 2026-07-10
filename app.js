@@ -4,8 +4,17 @@ const SPELL_STORAGE_KEY = "spelling-game-progress-v1";
 const READ_STORAGE_KEY = "reading-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
+// A missed top-tier word chips this much off the unlock streak instead of
+// zeroing it, so one unlucky slip at the (rare, hard) frontier doesn't wipe out
+// several games' worth of accumulated progress.
+const STREAK_MISS_PENALTY = 2;
 const MAX_MISSES_PER_LETTER = 3;
 const SAD_FACE_THRESHOLD = 40;
+// A game runs for this many turns and then ends with a summary screen. The
+// counter resets to 0 whenever a tier unlocks, so a hot streak earns a fresh
+// batch of turns; plateauing lets the game wind down. Bounded either way,
+// since unlocks stop at MAX_TIER.
+const TURNS_PER_GAME = 10;
 
 // A word's difficulty tier is purely a function of its length. This is the
 // single place the tier rules live - change these thresholds and every word
@@ -28,6 +37,14 @@ const MAX_TIER = Math.max(...WORDS.map((w) => tierForWord(w.word)));
 const BASE_TIER_DECAY = 0.5;
 const MAX_TIER_DECAY = 2.0;
 const STRUGGLE_EMA_ALPHA = 0.25;
+// Fraction of normal picks reserved for the current top tier. Without this, the
+// growing stack of unlocked lower tiers crowds out the single top tier, so a
+// player at a high tier rarely sees enough top-tier words in a 10-turn game to
+// build the unlock streak. Pinning the top tier to a fixed share keeps top-tier
+// exposure at ~WORDS_TO_UNLOCK per game at every tier. The share slides from MAX
+// (confident) down to MIN as recentStruggle rises, bringing back easier review.
+const TOP_TIER_SHARE_MAX = 0.65;
+const TOP_TIER_SHARE_MIN = 0.4;
 
 // "spell" | "read" - chosen from the start overlay. The active mode's progress
 // object is aliased as `progress` so the shared bookkeeping helpers work
@@ -53,6 +70,14 @@ const READ_CHOICES = 4;
 const READ_WRONG_PENALTY = 34;
 let readTarget = null;
 let readWrongTaps = 0;
+
+// Per-game counters (reset when a new game starts, not persisted). turnsThisLeg
+// drives the game-end check and resets on tier unlock; the other three feed the
+// summary screen and count across the whole game.
+let turnsThisLeg = 0;
+let gameWordsTotal = 0;
+let gameScoreSum = 0;
+let gameTiersUnlocked = 0;
 
 function loadProgress(key) {
   try {
@@ -156,21 +181,51 @@ function speakWord() {
   }
 }
 
+function weightedChoice(items, weights) {
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  let r = Math.random() * totalWeight;
+  for (let i = 0; i < items.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return items[i];
+  }
+  return items[items.length - 1];
+}
+
+function pickFromTier(tier) {
+  let pool = WORDS.filter(
+    (w) => tierForWord(w.word) === tier && (!lastWord || w.word !== lastWord.word)
+  );
+  // Every tier has plenty of words, but guard against a tier of one that's also
+  // the last word, so we never index into an empty pool.
+  if (pool.length === 0) pool = WORDS.filter((w) => tierForWord(w.word) === tier);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 function pickNextWord(maxTier = progress.unlockedTier) {
+  const topTier = progress.unlockedTier;
+  const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
+
+  // Normal pick at the frontier: give the top tier a fixed share of picks so it
+  // isn't swamped by the accumulated lower tiers, then spread the rest across
+  // the lower tiers by the usual decay weighting. (When maxTier is below the
+  // frontier - the easier "confidence" pick after a low score - there are no
+  // top-tier words to favour, so fall through to the plain weighted pick.)
+  if (topTier > 1 && maxTier >= topTier) {
+    const share =
+      TOP_TIER_SHARE_MAX - progress.recentStruggle * (TOP_TIER_SHARE_MAX - TOP_TIER_SHARE_MIN);
+    if (Math.random() < share) return pickFromTier(topTier);
+
+    const lowerTiers = [];
+    for (let t = 1; t < topTier; t++) lowerTiers.push(t);
+    const tierWeights = lowerTiers.map((t) => Math.pow(decay, topTier - t));
+    return pickFromTier(weightedChoice(lowerTiers, tierWeights));
+  }
+
   const pool = WORDS.filter(
     (w) => tierForWord(w.word) <= maxTier && (!lastWord || w.word !== lastWord.word)
   );
-
-  const decay = BASE_TIER_DECAY + progress.recentStruggle * (MAX_TIER_DECAY - BASE_TIER_DECAY);
-  const weights = pool.map((w) => Math.pow(decay, progress.unlockedTier - tierForWord(w.word)));
-  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
-
-  let r = Math.random() * totalWeight;
-  for (let i = 0; i < pool.length; i++) {
-    r -= weights[i];
-    if (r <= 0) return pool[i];
-  }
-  return pool[pool.length - 1];
+  const weights = pool.map((w) => Math.pow(decay, topTier - tierForWord(w.word)));
+  return weightedChoice(pool, weights);
 }
 
 function startWord(wordObj) {
@@ -285,16 +340,19 @@ function completeWord() {
   const score = Math.round(
     Math.max(0, 100 - (wrongGuesses / currentWord.word.length) * 100)
   );
-  const { nextMaxTier, unlockedNewTier } = recordCompletion(score);
+  const { nextMaxTier, unlockedNewTier, gameOver } = recordCompletion(score);
+  const delay = unlockedNewTier ? 2200 : 1300;
   setTimeout(() => {
-    startWord(pickNextWord(nextMaxTier));
-  }, unlockedNewTier ? 2200 : 1300);
+    if (gameOver) showSummary();
+    else startWord(pickNextWord(nextMaxTier));
+  }, delay);
 }
 
 // Shared end-of-round bookkeeping for both modes: records the score against the
 // active mode's progress, updates the difficulty struggle EMA, advances the
 // tier-unlock streak, persists, and shows the scoreboard/face/banner. Returns
-// the tier cap to use for the next word and whether a new tier just unlocked.
+// the tier cap to use for the next word, whether a new tier just unlocked, and
+// whether the game has now ended.
 function recordCompletion(score) {
   progress.totalWordsCompleted++;
   progress.totalScoreSum += score;
@@ -313,7 +371,7 @@ function recordCompletion(score) {
     if (score >= UNLOCK_THRESHOLD_SCORE) {
       progress.tierStreak = (progress.tierStreak || 0) + 1;
     } else {
-      progress.tierStreak = 0;
+      progress.tierStreak = Math.max(0, (progress.tierStreak || 0) - STREAK_MISS_PENALTY);
     }
   }
 
@@ -343,14 +401,46 @@ function recordCompletion(score) {
     showTierUnlockBanner();
   }
 
+  // Per-game accounting. Every completed word counts toward the game totals;
+  // the leg counter advances too, but an unlock wipes it back to 0 so the
+  // player earns a fresh set of turns instead of ending here.
+  gameWordsTotal++;
+  gameScoreSum += score;
+  turnsThisLeg++;
+  if (unlockedNewTier) {
+    gameTiersUnlocked++;
+    turnsThisLeg = 0;
+  }
+  renderTurnProgress();
+  const gameOver = turnsThisLeg >= TURNS_PER_GAME;
+
   const nextMaxTier = sadFace
     ? Math.max(1, progress.unlockedTier - 1)
     : progress.unlockedTier;
-  return { nextMaxTier, unlockedNewTier };
+  return { nextMaxTier, unlockedNewTier, gameOver };
 }
 
 function activeFeedbackEl() {
   return document.getElementById(mode === "read" ? "read-feedback" : "feedback");
+}
+
+function renderTurnProgress() {
+  const el = document.getElementById("turn-progress");
+  if (!el) return;
+  el.innerHTML = "";
+  for (let i = 0; i < TURNS_PER_GAME; i++) {
+    const dot = document.createElement("span");
+    dot.className = "turn-dot" + (i < turnsThisLeg ? " done" : "");
+    el.appendChild(dot);
+  }
+}
+
+function resetGameCounters() {
+  turnsThisLeg = 0;
+  gameWordsTotal = 0;
+  gameScoreSum = 0;
+  gameTiersUnlocked = 0;
+  renderTurnProgress();
 }
 
 function updateScoreboard(lastScore) {
@@ -391,6 +481,44 @@ function showTierUnlockBanner() {
   }, 1900);
 }
 
+function summaryTitle(avg) {
+  if (avg >= 90) return "Amazing game! 🌟";
+  if (avg >= 70) return "Great game! 🎉";
+  if (avg >= SAD_FACE_THRESHOLD) return "Good effort! 👍";
+  return "Keep practising! 💪";
+}
+
+function showSummary() {
+  const avg = gameWordsTotal ? Math.round(gameScoreSum / gameWordsTotal) : 0;
+  document.getElementById("summary-face").src = getFaceForScore(avg);
+  document.getElementById("summary-title").textContent = summaryTitle(avg);
+  document.getElementById("summary-words").textContent = gameWordsTotal;
+  document.getElementById("summary-avg").textContent = avg;
+
+  const tierLine = document.getElementById("summary-tiers");
+  if (gameTiersUnlocked > 0) {
+    tierLine.textContent =
+      `You unlocked ${gameTiersUnlocked} new tier${gameTiersUnlocked > 1 ? "s" : ""}! 🎉`;
+    tierLine.classList.remove("hidden");
+  } else {
+    tierLine.classList.add("hidden");
+  }
+
+  document.getElementById("summary-overlay").classList.remove("hidden");
+}
+
+function playAgain() {
+  document.getElementById("summary-overlay").classList.add("hidden");
+  resetGameCounters();
+  if (mode === "read") startReadRound();
+  else startWord(pickNextWord());
+}
+
+function goToMenu() {
+  document.getElementById("summary-overlay").classList.add("hidden");
+  document.getElementById("start-overlay").classList.remove("hidden");
+}
+
 function resetProgress() {
   if (!confirm("Reset all progress? This can't be undone.")) return;
   const fresh = {
@@ -409,6 +537,7 @@ function resetProgress() {
   saveProgress();
   lastWord = null;
   updateScoreboard(null);
+  resetGameCounters();
   if (mode === "read") startReadRound();
   else startWord(pickNextWord());
 }
@@ -445,6 +574,7 @@ function setMode(m) {
   document.getElementById("game-title").textContent =
     m === "read" ? "Miles' Reading Game" : "Miles' Spelling Game";
   updateScoreboard(null);
+  resetGameCounters();
 }
 
 function startSpell() {
@@ -531,10 +661,12 @@ function handleReadChoice(word, btn) {
 
 function completeReadRound() {
   const score = Math.max(0, 100 - readWrongTaps * READ_WRONG_PENALTY);
-  const { nextMaxTier, unlockedNewTier } = recordCompletion(score);
+  const { nextMaxTier, unlockedNewTier, gameOver } = recordCompletion(score);
+  const delay = unlockedNewTier ? 2200 : 1300;
   setTimeout(() => {
-    startReadRound(nextMaxTier);
-  }, unlockedNewTier ? 2200 : 1300);
+    if (gameOver) showSummary();
+    else startReadRound(nextMaxTier);
+  }, delay);
 }
 
 function init() {
@@ -542,6 +674,8 @@ function init() {
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
   document.getElementById("spell-btn").addEventListener("click", startSpell);
   document.getElementById("read-btn").addEventListener("click", startRead);
+  document.getElementById("play-again-btn").addEventListener("click", playAgain);
+  document.getElementById("menu-btn").addEventListener("click", goToMenu);
   window.addEventListener("keydown", handleKeydown);
   buildOnscreenKeyboard();
   updateScoreboard(null);
