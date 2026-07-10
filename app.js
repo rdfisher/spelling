@@ -1,4 +1,7 @@
-const STORAGE_KEY = "spelling-game-progress-v1";
+// Each game mode keeps its own independent progress (unlocked tiers, streaks,
+// difficulty struggle, stats) under its own storage key.
+const SPELL_STORAGE_KEY = "spelling-game-progress-v1";
+const READ_STORAGE_KEY = "reading-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
 const MAX_MISSES_PER_LETTER = 3;
@@ -26,7 +29,14 @@ const BASE_TIER_DECAY = 0.5;
 const MAX_TIER_DECAY = 2.0;
 const STRUGGLE_EMA_ALPHA = 0.25;
 
-let progress = loadProgress();
+// "spell" | "read" - chosen from the start overlay. The active mode's progress
+// object is aliased as `progress` so the shared bookkeeping helpers work
+// unchanged, and `storageKey` tracks where to persist it.
+let mode = "spell";
+let spellProgress = loadProgress(SPELL_STORAGE_KEY);
+let readProgress = loadProgress(READ_STORAGE_KEY);
+let progress = spellProgress;
+let storageKey = SPELL_STORAGE_KEY;
 let currentWord = null;
 let currentIndex = 0;
 let wrongGuesses = 0;
@@ -37,9 +47,16 @@ let audioCtx = null;
 let autoSpeakTimer = null;
 let speechUnlocked = false;
 
-function loadProgress() {
+// Read mode: number of image choices per round and the score penalty per
+// wrong tap (first-tap correct = 100; three wrong taps drops it to 0).
+const READ_CHOICES = 4;
+const READ_WRONG_PENALTY = 34;
+let readTarget = null;
+let readWrongTaps = 0;
+
+function loadProgress(key) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const loaded = JSON.parse(raw);
       // Clamp in case a tier restructure since this was saved left
@@ -63,7 +80,7 @@ function loadProgress() {
 
 function saveProgress() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    localStorage.setItem(storageKey, JSON.stringify(progress));
   } catch (e) {
     // storage unavailable (e.g. private browsing) - progress just won't persist
   }
@@ -268,6 +285,17 @@ function completeWord() {
   const score = Math.round(
     Math.max(0, 100 - (wrongGuesses / currentWord.word.length) * 100)
   );
+  const { nextMaxTier, unlockedNewTier } = recordCompletion(score);
+  setTimeout(() => {
+    startWord(pickNextWord(nextMaxTier));
+  }, unlockedNewTier ? 2200 : 1300);
+}
+
+// Shared end-of-round bookkeeping for both modes: records the score against the
+// active mode's progress, updates the difficulty struggle EMA, advances the
+// tier-unlock streak, persists, and shows the scoreboard/face/banner. Returns
+// the tier cap to use for the next word and whether a new tier just unlocked.
+function recordCompletion(score) {
   progress.totalWordsCompleted++;
   progress.totalScoreSum += score;
   const prevBest = progress.bestScores[currentWord.word] || 0;
@@ -305,9 +333,9 @@ function completeWord() {
   // below the highest unlocked tier (unless only tier 1 is unlocked).
   const sadFace = score < SAD_FACE_THRESHOLD;
   if (sadFace) {
-    document.getElementById("feedback").textContent = "";
+    activeFeedbackEl().textContent = "";
   } else {
-    document.getElementById("feedback").textContent = `Great job! Score: ${score}`;
+    activeFeedbackEl().textContent = `Great job! Score: ${score}`;
     showScoreFace(score);
   }
 
@@ -318,9 +346,11 @@ function completeWord() {
   const nextMaxTier = sadFace
     ? Math.max(1, progress.unlockedTier - 1)
     : progress.unlockedTier;
-  setTimeout(() => {
-    startWord(pickNextWord(nextMaxTier));
-  }, unlockedNewTier ? 2200 : 1300);
+  return { nextMaxTier, unlockedNewTier };
+}
+
+function activeFeedbackEl() {
+  return document.getElementById(mode === "read" ? "read-feedback" : "feedback");
 }
 
 function updateScoreboard(lastScore) {
@@ -363,7 +393,7 @@ function showTierUnlockBanner() {
 
 function resetProgress() {
   if (!confirm("Reset all progress? This can't be undone.")) return;
-  progress = {
+  const fresh = {
     unlockedTier: 1,
     tierStreak: 0,
     recentStruggle: 0,
@@ -371,10 +401,16 @@ function resetProgress() {
     totalWordsCompleted: 0,
     totalScoreSum: 0,
   };
+  // Reset only the mode currently being played; the other mode's progress
+  // is stored separately and left untouched.
+  progress = fresh;
+  if (mode === "read") readProgress = fresh;
+  else spellProgress = fresh;
   saveProgress();
   lastWord = null;
   updateScoreboard(null);
-  startWord(pickNextWord());
+  if (mode === "read") startReadRound();
+  else startWord(pickNextWord());
 }
 
 const KEYBOARD_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
@@ -396,7 +432,23 @@ function buildOnscreenKeyboard() {
   });
 }
 
-function startGame() {
+// Point `progress`/`storageKey` at the chosen mode, swap which <main> is
+// shown, and refresh the shared header/scoreboard. Called once from the start
+// overlay - there's no way back to it, so the two modes never run at once.
+function setMode(m) {
+  mode = m;
+  progress = m === "read" ? readProgress : spellProgress;
+  storageKey = m === "read" ? READ_STORAGE_KEY : SPELL_STORAGE_KEY;
+  lastWord = null;
+  document.getElementById("spell-main").classList.toggle("hidden", m !== "spell");
+  document.getElementById("read-main").classList.toggle("hidden", m !== "read");
+  document.getElementById("game-title").textContent =
+    m === "read" ? "Miles' Reading Game" : "Miles' Spelling Game";
+  updateScoreboard(null);
+}
+
+function startSpell() {
+  setMode("spell");
   document.getElementById("start-overlay").classList.add("hidden");
   // Unlocking speech synchronously inside this click handler (rather than
   // waiting for the first in-game keypress) means even the very first word's
@@ -405,10 +457,91 @@ function startGame() {
   startWord(pickNextWord());
 }
 
+function startRead() {
+  setMode("read");
+  document.getElementById("start-overlay").classList.add("hidden");
+  startReadRound();
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Build the four image choices for a round: the target plus three random
+// distractors drawn from the same unlocked-tier pool, all shuffled.
+function buildReadChoices(target) {
+  const pool = WORDS.filter(
+    (w) => tierForWord(w.word) <= progress.unlockedTier && w.word !== target.word
+  );
+  const distractors = shuffle(pool).slice(0, READ_CHOICES - 1);
+  return shuffle([target, ...distractors]);
+}
+
+function startReadRound(maxTier = progress.unlockedTier) {
+  readTarget = pickNextWord(maxTier);
+  // Alias as currentWord so the shared tier badge / recordCompletion helpers,
+  // which read currentWord, work for read rounds too.
+  currentWord = readTarget;
+  readWrongTaps = 0;
+  locked = false;
+  updateTierBadge();
+  activeFeedbackEl().textContent = "";
+  document.getElementById("read-word").textContent = readTarget.word;
+
+  const container = document.getElementById("read-choices");
+  container.innerHTML = "";
+  buildReadChoices(readTarget).forEach((w) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "read-choice";
+    const img = document.createElement("img");
+    img.src = w.image;
+    img.alt = "";
+    btn.appendChild(img);
+    btn.addEventListener("click", () => handleReadChoice(w, btn));
+    container.appendChild(btn);
+  });
+}
+
+function handleReadChoice(word, btn) {
+  if (locked) return;
+
+  if (word.word === readTarget.word) {
+    locked = true;
+    btn.classList.add("correct");
+    playWordCompleteFanfare();
+    // Let the correct tile's highlight land before the score face takes over.
+    setTimeout(completeReadRound, 500);
+    return;
+  }
+
+  // Wrong pick: penalize, grey it out so it can't be tapped again, and let
+  // the child keep trying the remaining tiles until they find the right one.
+  readWrongTaps++;
+  playWrongSound();
+  btn.classList.add("wrong");
+  btn.disabled = true;
+  setTimeout(() => btn.classList.remove("wrong"), 400);
+}
+
+function completeReadRound() {
+  const score = Math.max(0, 100 - readWrongTaps * READ_WRONG_PENALTY);
+  const { nextMaxTier, unlockedNewTier } = recordCompletion(score);
+  setTimeout(() => {
+    startReadRound(nextMaxTier);
+  }, unlockedNewTier ? 2200 : 1300);
+}
+
 function init() {
   document.getElementById("hear-btn").addEventListener("click", speakWord);
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
-  document.getElementById("start-btn").addEventListener("click", startGame);
+  document.getElementById("spell-btn").addEventListener("click", startSpell);
+  document.getElementById("read-btn").addEventListener("click", startRead);
   window.addEventListener("keydown", handleKeydown);
   buildOnscreenKeyboard();
   updateScoreboard(null);
