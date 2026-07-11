@@ -331,6 +331,10 @@ footer {
   background: #23a55a;
 }
 
+.start-choice.maths {
+  background: #d6336c;
+}
+
 .start-choice.menu {
   background: none;
   color: #5b3fd6;
@@ -600,7 +604,8 @@ footer {
   display: none;
 }
 
-#count-typed {
+#count-typed,
+#maths-typed {
   font-size: clamp(2.4rem, 11vw, 3.4rem);
   font-weight: 800;
   color: #5b3fd6;
@@ -608,12 +613,14 @@ footer {
   line-height: 1;
 }
 
-#count-typed.shake {
+#count-typed.shake,
+#maths-typed.shake {
   animation: shake 0.4s ease;
   color: var(--wrong);
 }
 
-#count-keypad {
+#count-keypad,
+#maths-keypad {
   --key-size: clamp(2.6rem, 16vw, 3.6rem);
   display: flex;
   flex-direction: column;
@@ -622,6 +629,35 @@ footer {
 
 .key-action {
   color: var(--accent);
+}
+
+/* -- Maths mode -- */
+#maths-prompt {
+  font-size: 1.1rem;
+  color: #666;
+  margin: 0 0 0.6rem;
+}
+
+#maths-question {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+#maths-sum {
+  font-size: clamp(2.4rem, 11vw, 3.4rem);
+  font-weight: 800;
+  color: #5b3fd6;
+}
+
+#maths-feedback {
+  min-height: 1.6rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--correct);
+  margin-bottom: 0.5rem;
 }
 
 #onscreen-keyboard {

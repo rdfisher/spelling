@@ -3,6 +3,7 @@
 const SPELL_STORAGE_KEY = "spelling-game-progress-v1";
 const READ_STORAGE_KEY = "reading-game-progress-v1";
 const COUNT_STORAGE_KEY = "counting-game-progress-v1";
+const MATHS_STORAGE_KEY = "maths-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
 // A missed top-tier word chips this much off the unlock streak instead of
@@ -54,6 +55,7 @@ let mode = "spell";
 let spellProgress = loadProgress(SPELL_STORAGE_KEY);
 let readProgress = loadProgress(READ_STORAGE_KEY);
 let countProgress = loadProgress(COUNT_STORAGE_KEY);
+let mathsProgress = loadProgress(MATHS_STORAGE_KEY);
 let progress = spellProgress;
 let storageKey = SPELL_STORAGE_KEY;
 let currentWord = null;
@@ -85,7 +87,19 @@ const COUNT_MAX_LEVEL = 2;
 const COUNT_WRONG_PENALTY = 34;
 let countTarget = 0;
 let countWrong = 0;
-let countTyped = "";
+
+// Maths mode: tier 1 adds two numbers, each MATHS_MIN..MATHS_MAX. Keyboard
+// entry only (no multiple-choice level). Later tiers TBD after playtesting.
+const MATHS_MIN = 1;
+const MATHS_MAX = 9;
+const MATHS_WRONG_PENALTY = 34;
+let mathsA = 0;
+let mathsB = 0;
+let mathsWrong = 0;
+
+// Shared numeric-keypad entry, used by Count level 2 and Maths. Only one mode
+// is ever active, so a single typed buffer suffices.
+let entryValue = "";
 
 // Per-game counters (reset when a new game starts, not persisted). turnsThisLeg
 // drives the game-end check and resets on tier unlock; the other three feed the
@@ -310,7 +324,11 @@ function flashBox(index, kind) {
 
 function handleKeydown(e) {
   if (mode === "count") {
-    handleCountKeydown(e);
+    if (countLevel() === 2) handleNumpadKeydown(e);
+    return;
+  }
+  if (mode === "maths") {
+    handleNumpadKeydown(e);
     return;
   }
   if (!/^[a-zA-Z]$/.test(e.key)) return;
@@ -471,6 +489,7 @@ function recordCompletion(score) {
 function activeFeedbackEl() {
   if (mode === "read") return document.getElementById("read-feedback");
   if (mode === "count") return document.getElementById("count-feedback");
+  if (mode === "maths") return document.getElementById("maths-feedback");
   return document.getElementById("feedback");
 }
 
@@ -560,8 +579,14 @@ function showSummary() {
 function playAgain() {
   document.getElementById("summary-overlay").classList.add("hidden");
   resetGameCounters();
+  restartActiveMode();
+}
+
+// Kick off a fresh round in whatever mode is active.
+function restartActiveMode() {
   if (mode === "read") startReadRound();
   else if (mode === "count") startCountRound();
+  else if (mode === "maths") startMathsRound();
   else startWord(pickNextWord());
 }
 
@@ -585,14 +610,13 @@ function resetProgress() {
   progress = fresh;
   if (mode === "read") readProgress = fresh;
   else if (mode === "count") countProgress = fresh;
+  else if (mode === "maths") mathsProgress = fresh;
   else spellProgress = fresh;
   saveProgress();
   lastWord = null;
   updateScoreboard(null);
   resetGameCounters();
-  if (mode === "read") startReadRound();
-  else if (mode === "count") startCountRound();
-  else startWord(pickNextWord());
+  restartActiveMode();
 }
 
 const KEYBOARD_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
@@ -617,21 +641,35 @@ function buildOnscreenKeyboard() {
 // Point `progress`/`storageKey` at the chosen mode, swap which <main> is
 // shown, and refresh the shared header/scoreboard. Called once from the start
 // overlay - there's no way back to it, so the two modes never run at once.
+const MODE_PROGRESS = () => ({
+  spell: spellProgress,
+  read: readProgress,
+  count: countProgress,
+  maths: mathsProgress,
+});
+const MODE_STORAGE_KEY = {
+  spell: SPELL_STORAGE_KEY,
+  read: READ_STORAGE_KEY,
+  count: COUNT_STORAGE_KEY,
+  maths: MATHS_STORAGE_KEY,
+};
+const MODE_TITLE = {
+  spell: "Miles' Spelling Game",
+  read: "Miles' Reading Game",
+  count: "Miles' Counting Game",
+  maths: "Miles' Maths Game",
+};
+
 function setMode(m) {
   mode = m;
-  progress = m === "read" ? readProgress : m === "count" ? countProgress : spellProgress;
-  storageKey =
-    m === "read" ? READ_STORAGE_KEY : m === "count" ? COUNT_STORAGE_KEY : SPELL_STORAGE_KEY;
+  progress = MODE_PROGRESS()[m];
+  storageKey = MODE_STORAGE_KEY[m];
   lastWord = null;
   document.getElementById("spell-main").classList.toggle("hidden", m !== "spell");
   document.getElementById("read-main").classList.toggle("hidden", m !== "read");
   document.getElementById("count-main").classList.toggle("hidden", m !== "count");
-  document.getElementById("game-title").textContent =
-    m === "read"
-      ? "Miles' Reading Game"
-      : m === "count"
-      ? "Miles' Counting Game"
-      : "Miles' Spelling Game";
+  document.getElementById("maths-main").classList.toggle("hidden", m !== "maths");
+  document.getElementById("game-title").textContent = MODE_TITLE[m];
   updateScoreboard(null);
   resetGameCounters();
 }
@@ -659,6 +697,12 @@ function startCount() {
   setMode("count");
   document.getElementById("start-overlay").classList.add("hidden");
   startCountRound();
+}
+
+function startMaths() {
+  setMode("maths");
+  document.getElementById("start-overlay").classList.add("hidden");
+  startMathsRound();
 }
 
 function shuffle(arr) {
@@ -762,7 +806,7 @@ function countLevel() {
 function startCountRound() {
   countTarget = COUNT_MIN + Math.floor(Math.random() * (COUNT_MAX - COUNT_MIN + 1));
   countWrong = 0;
-  countTyped = "";
+  entryValue = "";
   locked = false;
   const level = countLevel();
 
@@ -776,7 +820,7 @@ function startCountRound() {
   entry.classList.toggle("hidden", level !== 2);
 
   if (level === 1) renderCountChoices();
-  else renderCountTyped();
+  else renderEntry();
 }
 
 // Render `n` copies of one random picture to be counted.
@@ -834,44 +878,58 @@ function handleCountChoice(n, btn) {
   setTimeout(() => btn.classList.remove("wrong"), 400);
 }
 
-// Level 2 keypad: show what's been typed so far (or a placeholder).
-function renderCountTyped() {
-  document.getElementById("count-typed").textContent = countTyped === "" ? "?" : countTyped;
+// Shared numeric-keypad entry (Count level 2 + Maths). The typed value shows in
+// the active mode's display; "check" submits to the active mode's handler.
+function entryDisplayEl() {
+  return document.getElementById(mode === "maths" ? "maths-typed" : "count-typed");
 }
 
-function handleCountKey(key) {
+function renderEntry() {
+  entryDisplayEl().textContent = entryValue === "" ? "?" : entryValue;
+}
+
+function handleEntryKey(key) {
   if (locked) return;
   if (key === "check") {
-    submitCount();
+    if (entryValue !== "") submitEntry();
     return;
   }
   if (key === "back") {
-    countTyped = countTyped.slice(0, -1);
-    renderCountTyped();
+    entryValue = entryValue.slice(0, -1);
+    renderEntry();
     return;
   }
-  // digit - cap at two characters (max answer is 12)
-  if (countTyped.length >= 2) return;
-  countTyped = (countTyped + key).replace(/^0+(?=\d)/, "");
-  renderCountTyped();
+  // digit - cap at two characters (largest answer is 18)
+  if (entryValue.length >= 2) return;
+  entryValue = (entryValue + key).replace(/^0+(?=\d)/, "");
+  renderEntry();
+}
+
+function submitEntry() {
+  if (mode === "maths") submitMaths();
+  else submitCount();
+}
+
+// Buzz, shake the display, and clear it so they can try again.
+function rejectEntry(counterInc) {
+  playWrongSound();
+  const el = entryDisplayEl();
+  el.classList.add("shake");
+  setTimeout(() => el.classList.remove("shake"), 400);
+  entryValue = "";
+  renderEntry();
+  return counterInc;
 }
 
 function submitCount() {
-  if (countTyped === "") return;
-  if (parseInt(countTyped, 10) === countTarget) {
+  if (parseInt(entryValue, 10) === countTarget) {
     locked = true;
     playWordCompleteFanfare();
     setTimeout(completeCountRound, 500);
     return;
   }
-  // Wrong entry: buzz, shake the display, and clear it to try again.
   countWrong++;
-  playWrongSound();
-  const typed = document.getElementById("count-typed");
-  typed.classList.add("shake");
-  setTimeout(() => typed.classList.remove("shake"), 400);
-  countTyped = "";
-  renderCountTyped();
+  rejectEntry();
 }
 
 function completeCountRound() {
@@ -899,36 +957,70 @@ function completeCountRound() {
   }, delay);
 }
 
-const COUNT_KEYPAD_ROWS = [
+const NUMPAD_ROWS = [
   ["1", "2", "3"],
   ["4", "5", "6"],
   ["7", "8", "9"],
   ["back", "0", "check"],
 ];
-const COUNT_KEY_LABEL = { back: "⌫", check: "✓" };
+const NUMPAD_LABEL = { back: "⌫", check: "✓" };
 
-function buildCountKeypad() {
-  const container = document.getElementById("count-keypad");
-  COUNT_KEYPAD_ROWS.forEach((row) => {
+function buildNumpad(containerId) {
+  const container = document.getElementById(containerId);
+  NUMPAD_ROWS.forEach((row) => {
     const rowEl = document.createElement("div");
     rowEl.className = "keyboard-row";
     row.forEach((key) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "key" + (COUNT_KEY_LABEL[key] ? " key-action" : "");
-      btn.textContent = COUNT_KEY_LABEL[key] || key;
-      btn.addEventListener("click", () => handleCountKey(key));
+      btn.className = "key" + (NUMPAD_LABEL[key] ? " key-action" : "");
+      btn.textContent = NUMPAD_LABEL[key] || key;
+      btn.addEventListener("click", () => handleEntryKey(key));
       rowEl.appendChild(btn);
     });
     container.appendChild(rowEl);
   });
 }
 
-function handleCountKeydown(e) {
-  if (countLevel() !== 2) return;
-  if (/^[0-9]$/.test(e.key)) handleCountKey(e.key);
-  else if (e.key === "Backspace") handleCountKey("back");
-  else if (e.key === "Enter") handleCountKey("check");
+function handleNumpadKeydown(e) {
+  if (/^[0-9]$/.test(e.key)) handleEntryKey(e.key);
+  else if (e.key === "Backspace") handleEntryKey("back");
+  else if (e.key === "Enter") handleEntryKey("check");
+}
+
+// -- Maths mode ------------------------------------------------------------
+// Tier 1: add two single-digit numbers, keyboard entry only.
+
+function startMathsRound() {
+  mathsA = MATHS_MIN + Math.floor(Math.random() * (MATHS_MAX - MATHS_MIN + 1));
+  mathsB = MATHS_MIN + Math.floor(Math.random() * (MATHS_MAX - MATHS_MIN + 1));
+  mathsWrong = 0;
+  entryValue = "";
+  locked = false;
+  document.getElementById("tier-badge").textContent = "➕ Add";
+  activeFeedbackEl().textContent = "";
+  document.getElementById("maths-sum").textContent = `${mathsA} + ${mathsB} =`;
+  renderEntry();
+}
+
+function submitMaths() {
+  if (parseInt(entryValue, 10) === mathsA + mathsB) {
+    locked = true;
+    playWordCompleteFanfare();
+    setTimeout(completeMathsRound, 500);
+    return;
+  }
+  mathsWrong++;
+  rejectEntry();
+}
+
+function completeMathsRound() {
+  const score = Math.max(0, 100 - mathsWrong * MATHS_WRONG_PENALTY);
+  const gameOver = finishRound(score, false);
+  setTimeout(() => {
+    if (gameOver) showSummary();
+    else startMathsRound();
+  }, 1300);
 }
 
 // Face reaction images aren't in WORDS but are needed during play, so preload
@@ -991,11 +1083,13 @@ function init() {
   document.getElementById("spell-btn").addEventListener("click", startSpell);
   document.getElementById("read-btn").addEventListener("click", startRead);
   document.getElementById("count-btn").addEventListener("click", startCount);
+  document.getElementById("maths-btn").addEventListener("click", startMaths);
   document.getElementById("play-again-btn").addEventListener("click", playAgain);
   document.getElementById("menu-btn").addEventListener("click", goToMenu);
   window.addEventListener("keydown", handleKeydown);
   buildOnscreenKeyboard();
-  buildCountKeypad();
+  buildNumpad("count-keypad");
+  buildNumpad("maths-keypad");
   updateScoreboard(null);
   preloadImages(onPreloadDone);
 }
