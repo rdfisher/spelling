@@ -74,6 +74,9 @@ const READ_CHOICES = 4;
 const READ_WRONG_PENALTY = 34;
 let readTarget = null;
 let readWrongTaps = 0;
+// The round's choices in tile order, so number keys 1-4 can select them on a
+// non-touch device (where tapping isn't practical).
+let readChoices = [];
 
 // Count mode: show N (COUNT_MIN..COUNT_MAX) identical pictures and ask how many.
 // Level 1 taps one of COUNT_CHOICES numbers (each within COUNT_SPREAD of the
@@ -329,6 +332,10 @@ function handleKeydown(e) {
   }
   if (mode === "maths") {
     handleNumpadKeydown(e);
+    return;
+  }
+  if (mode === "read") {
+    handleReadKeydown(e);
     return;
   }
   if (!/^[a-zA-Z]$/.test(e.key)) return;
@@ -738,7 +745,8 @@ function startReadRound(maxTier = progress.unlockedTier) {
 
   const container = document.getElementById("read-choices");
   container.innerHTML = "";
-  buildReadChoices(readTarget).forEach((w) => {
+  readChoices = buildReadChoices(readTarget);
+  readChoices.forEach((w, i) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "read-choice";
@@ -746,9 +754,23 @@ function startReadRound(maxTier = progress.unlockedTier) {
     img.src = w.image;
     img.alt = "";
     btn.appendChild(img);
+    // Corner number for keyboard selection; hidden on touch devices via CSS.
+    const num = document.createElement("span");
+    num.className = "choice-num";
+    num.textContent = i + 1;
+    btn.appendChild(num);
     btn.addEventListener("click", () => handleReadChoice(w, btn));
     container.appendChild(btn);
   });
+}
+
+// Number keys 1-4 pick the matching tile (for non-touch play).
+function handleReadKeydown(e) {
+  const idx = "1234".indexOf(e.key);
+  if (idx === -1) return;
+  const btn = document.querySelectorAll("#read-choices .read-choice")[idx];
+  if (!btn || btn.disabled) return;
+  handleReadChoice(readChoices[idx], btn);
 }
 
 function handleReadChoice(word, btn) {

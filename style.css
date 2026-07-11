@@ -475,6 +475,7 @@ footer {
 }
 
 .read-choice {
+  position: relative;
   background: #f0f4ff;
   border: 4px solid transparent;
   border-radius: 20px;
@@ -487,6 +488,25 @@ footer {
   transition: transform 0.15s ease, opacity 0.3s ease;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Corner number for keyboard selection (non-touch only - hidden on touch,
+   where you just tap the picture). */
+.choice-num {
+  position: absolute;
+  top: 0.4rem;
+  left: 0.4rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: #5b3fd6;
+  color: white;
+  font-size: 1rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
 }
 
 .read-choice img {
@@ -706,5 +726,10 @@ footer {
   #count-keypad,
   #maths-keypad {
     display: flex;
+  }
+  /* On touch you tap the picture directly, so the keyboard numbers just add
+     clutter. */
+  .choice-num {
+    display: none;
   }
 }
