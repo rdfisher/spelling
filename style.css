@@ -622,7 +622,10 @@ footer {
 #count-keypad,
 #maths-keypad {
   --key-size: clamp(2.6rem, 16vw, 3.6rem);
-  display: flex;
+  /* Hidden by default; shown only on touch devices (see media query below),
+     just like the spell keyboard. On a non-touch laptop the physical number
+     keys + Enter drive entry instead. */
+  display: none;
   flex-direction: column;
   gap: 0.4rem;
 }
@@ -699,7 +702,9 @@ footer {
 }
 
 @media (hover: none) and (pointer: coarse) {
-  #onscreen-keyboard {
+  #onscreen-keyboard,
+  #count-keypad,
+  #maths-keypad {
     display: flex;
   }
 }
