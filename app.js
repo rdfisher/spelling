@@ -2,6 +2,7 @@
 // difficulty struggle, stats) under its own storage key.
 const SPELL_STORAGE_KEY = "spelling-game-progress-v1";
 const READ_STORAGE_KEY = "reading-game-progress-v1";
+const COUNT_STORAGE_KEY = "counting-game-progress-v1";
 const UNLOCK_THRESHOLD_SCORE = 70;
 const WORDS_TO_UNLOCK = 6;
 // A missed top-tier word chips this much off the unlock streak instead of
@@ -52,6 +53,7 @@ const TOP_TIER_SHARE_MIN = 0.4;
 let mode = "spell";
 let spellProgress = loadProgress(SPELL_STORAGE_KEY);
 let readProgress = loadProgress(READ_STORAGE_KEY);
+let countProgress = loadProgress(COUNT_STORAGE_KEY);
 let progress = spellProgress;
 let storageKey = SPELL_STORAGE_KEY;
 let currentWord = null;
@@ -70,6 +72,20 @@ const READ_CHOICES = 4;
 const READ_WRONG_PENALTY = 34;
 let readTarget = null;
 let readWrongTaps = 0;
+
+// Count mode: show N (COUNT_MIN..COUNT_MAX) identical pictures and ask how many.
+// Level 1 taps one of COUNT_CHOICES numbers (each within COUNT_SPREAD of the
+// answer); level 2 types the number on a keypad. Level 2 unlocks from level 1
+// via the usual streak, so COUNT_MAX_LEVEL caps the mode at two "tiers".
+const COUNT_MIN = 1;
+const COUNT_MAX = 12;
+const COUNT_CHOICES = 3;
+const COUNT_SPREAD = 2;
+const COUNT_MAX_LEVEL = 2;
+const COUNT_WRONG_PENALTY = 34;
+let countTarget = 0;
+let countWrong = 0;
+let countTyped = "";
 
 // Per-game counters (reset when a new game starts, not persisted). turnsThisLeg
 // drives the game-end check and resets on tier unlock; the other three feed the
@@ -293,6 +309,10 @@ function flashBox(index, kind) {
 }
 
 function handleKeydown(e) {
+  if (mode === "count") {
+    handleCountKeydown(e);
+    return;
+  }
   if (!/^[a-zA-Z]$/.test(e.key)) return;
   submitLetter(e.key, false);
 }
@@ -372,14 +392,46 @@ function completeWord() {
   }, delay);
 }
 
-// Shared end-of-round bookkeeping for both modes: records the score against the
-// active mode's progress, updates the difficulty struggle EMA, advances the
-// tier-unlock streak, persists, and shows the scoreboard/face/banner. Returns
-// the tier cap to use for the next word, whether a new tier just unlocked, and
-// whether the game has now ended.
-function recordCompletion(score) {
+// Generic per-round bookkeeping shared by every mode: records the score into
+// the active mode's stats, advances the per-game counters (a tier/level unlock
+// resets the leg so a hot streak earns fresh turns), persists, and shows the
+// scoreboard, score face/feedback, and unlock banner. Returns whether the game
+// has now ended.
+function finishRound(score, unlockedNewTier) {
   progress.totalWordsCompleted++;
   progress.totalScoreSum += score;
+
+  gameWordsTotal++;
+  gameScoreSum += score;
+  turnsThisLeg++;
+  if (unlockedNewTier) {
+    gameTiersUnlocked++;
+    turnsThisLeg = 0;
+  }
+  renderTurnProgress();
+  const gameOver = turnsThisLeg >= TURNS_PER_GAME;
+
+  saveProgress();
+  updateScoreboard(score);
+
+  // A sad-face score is discouraging to see, so skip the overlay entirely and
+  // quietly move on.
+  if (score < SAD_FACE_THRESHOLD) {
+    activeFeedbackEl().textContent = "";
+  } else {
+    activeFeedbackEl().textContent = `Great job! Score: ${score}`;
+    showScoreFace(score);
+  }
+  if (unlockedNewTier) showTierUnlockBanner();
+
+  return gameOver;
+}
+
+// Word-mode (spell/read) end-of-round bookkeeping: updates the best score and
+// difficulty struggle EMA, advances the word-tier unlock streak, then defers to
+// finishRound for the shared parts. Returns the tier cap for the next word,
+// whether a new tier unlocked, and whether the game has ended.
+function recordCompletion(score) {
   const prevBest = progress.bestScores[currentWord.word] || 0;
   if (score > prevBest) progress.bestScores[currentWord.word] = score;
 
@@ -406,38 +458,10 @@ function recordCompletion(score) {
     unlockedNewTier = true;
   }
 
-  saveProgress();
-  updateScoreboard(score);
   lastWord = currentWord;
+  const gameOver = finishRound(score, unlockedNewTier);
 
-  // A sad-face score is discouraging to see, so skip the overlay entirely and
-  // quietly move on - and make the next word an easier one by keeping it
-  // below the highest unlocked tier (unless only tier 1 is unlocked).
   const sadFace = score < SAD_FACE_THRESHOLD;
-  if (sadFace) {
-    activeFeedbackEl().textContent = "";
-  } else {
-    activeFeedbackEl().textContent = `Great job! Score: ${score}`;
-    showScoreFace(score);
-  }
-
-  if (unlockedNewTier) {
-    showTierUnlockBanner();
-  }
-
-  // Per-game accounting. Every completed word counts toward the game totals;
-  // the leg counter advances too, but an unlock wipes it back to 0 so the
-  // player earns a fresh set of turns instead of ending here.
-  gameWordsTotal++;
-  gameScoreSum += score;
-  turnsThisLeg++;
-  if (unlockedNewTier) {
-    gameTiersUnlocked++;
-    turnsThisLeg = 0;
-  }
-  renderTurnProgress();
-  const gameOver = turnsThisLeg >= TURNS_PER_GAME;
-
   const nextMaxTier = sadFace
     ? Math.max(1, progress.unlockedTier - 1)
     : progress.unlockedTier;
@@ -445,7 +469,9 @@ function recordCompletion(score) {
 }
 
 function activeFeedbackEl() {
-  return document.getElementById(mode === "read" ? "read-feedback" : "feedback");
+  if (mode === "read") return document.getElementById("read-feedback");
+  if (mode === "count") return document.getElementById("count-feedback");
+  return document.getElementById("feedback");
 }
 
 function renderTurnProgress() {
@@ -535,6 +561,7 @@ function playAgain() {
   document.getElementById("summary-overlay").classList.add("hidden");
   resetGameCounters();
   if (mode === "read") startReadRound();
+  else if (mode === "count") startCountRound();
   else startWord(pickNextWord());
 }
 
@@ -557,12 +584,14 @@ function resetProgress() {
   // is stored separately and left untouched.
   progress = fresh;
   if (mode === "read") readProgress = fresh;
+  else if (mode === "count") countProgress = fresh;
   else spellProgress = fresh;
   saveProgress();
   lastWord = null;
   updateScoreboard(null);
   resetGameCounters();
   if (mode === "read") startReadRound();
+  else if (mode === "count") startCountRound();
   else startWord(pickNextWord());
 }
 
@@ -590,13 +619,19 @@ function buildOnscreenKeyboard() {
 // overlay - there's no way back to it, so the two modes never run at once.
 function setMode(m) {
   mode = m;
-  progress = m === "read" ? readProgress : spellProgress;
-  storageKey = m === "read" ? READ_STORAGE_KEY : SPELL_STORAGE_KEY;
+  progress = m === "read" ? readProgress : m === "count" ? countProgress : spellProgress;
+  storageKey =
+    m === "read" ? READ_STORAGE_KEY : m === "count" ? COUNT_STORAGE_KEY : SPELL_STORAGE_KEY;
   lastWord = null;
   document.getElementById("spell-main").classList.toggle("hidden", m !== "spell");
   document.getElementById("read-main").classList.toggle("hidden", m !== "read");
+  document.getElementById("count-main").classList.toggle("hidden", m !== "count");
   document.getElementById("game-title").textContent =
-    m === "read" ? "Miles' Reading Game" : "Miles' Spelling Game";
+    m === "read"
+      ? "Miles' Reading Game"
+      : m === "count"
+      ? "Miles' Counting Game"
+      : "Miles' Spelling Game";
   updateScoreboard(null);
   resetGameCounters();
 }
@@ -618,6 +653,12 @@ function startRead() {
   // (iOS only allows speech after a speak() call within a real user gesture).
   unlockSpeech();
   startReadRound();
+}
+
+function startCount() {
+  setMode("count");
+  document.getElementById("start-overlay").classList.add("hidden");
+  startCountRound();
 }
 
 function shuffle(arr) {
@@ -711,6 +752,185 @@ function completeReadRound() {
   }, delay);
 }
 
+// -- Count mode ------------------------------------------------------------
+// Level 1 (unlockedTier 1) taps a number; level 2 (unlockedTier 2) types it.
+
+function countLevel() {
+  return progress.unlockedTier >= 2 ? 2 : 1;
+}
+
+function startCountRound() {
+  countTarget = COUNT_MIN + Math.floor(Math.random() * (COUNT_MAX - COUNT_MIN + 1));
+  countWrong = 0;
+  countTyped = "";
+  locked = false;
+  const level = countLevel();
+
+  document.getElementById("tier-badge").textContent = level === 2 ? "⌨️ Keypad" : "👆 Tap";
+  activeFeedbackEl().textContent = "";
+  renderCountObjects(countTarget);
+
+  const choices = document.getElementById("count-choices");
+  const entry = document.getElementById("count-entry");
+  choices.classList.toggle("hidden", level !== 1);
+  entry.classList.toggle("hidden", level !== 2);
+
+  if (level === 1) renderCountChoices();
+  else renderCountTyped();
+}
+
+// Render `n` copies of one random picture to be counted.
+function renderCountObjects(n) {
+  const container = document.getElementById("count-objects");
+  container.innerHTML = "";
+  const pic = WORDS[Math.floor(Math.random() * WORDS.length)].image;
+  for (let i = 0; i < n; i++) {
+    const img = document.createElement("img");
+    img.src = pic;
+    img.alt = "";
+    container.appendChild(img);
+  }
+}
+
+// The answer plus two distinct distractors, each within COUNT_SPREAD of it and
+// inside the valid range, all shuffled.
+function buildCountChoices() {
+  const candidates = [];
+  for (let d = -COUNT_SPREAD; d <= COUNT_SPREAD; d++) {
+    const n = countTarget + d;
+    if (d !== 0 && n >= COUNT_MIN && n <= COUNT_MAX) candidates.push(n);
+  }
+  const distractors = shuffle(candidates).slice(0, COUNT_CHOICES - 1);
+  return shuffle([countTarget, ...distractors]);
+}
+
+function renderCountChoices() {
+  const container = document.getElementById("count-choices");
+  container.innerHTML = "";
+  buildCountChoices().forEach((n) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "count-choice";
+    btn.textContent = n;
+    btn.addEventListener("click", () => handleCountChoice(n, btn));
+    container.appendChild(btn);
+  });
+}
+
+function handleCountChoice(n, btn) {
+  if (locked) return;
+  if (n === countTarget) {
+    locked = true;
+    btn.classList.add("correct");
+    playWordCompleteFanfare();
+    setTimeout(completeCountRound, 500);
+    return;
+  }
+  // Wrong: penalize and lock out that tile, let them keep trying.
+  countWrong++;
+  playWrongSound();
+  btn.classList.add("wrong");
+  btn.disabled = true;
+  setTimeout(() => btn.classList.remove("wrong"), 400);
+}
+
+// Level 2 keypad: show what's been typed so far (or a placeholder).
+function renderCountTyped() {
+  document.getElementById("count-typed").textContent = countTyped === "" ? "?" : countTyped;
+}
+
+function handleCountKey(key) {
+  if (locked) return;
+  if (key === "check") {
+    submitCount();
+    return;
+  }
+  if (key === "back") {
+    countTyped = countTyped.slice(0, -1);
+    renderCountTyped();
+    return;
+  }
+  // digit - cap at two characters (max answer is 12)
+  if (countTyped.length >= 2) return;
+  countTyped = (countTyped + key).replace(/^0+(?=\d)/, "");
+  renderCountTyped();
+}
+
+function submitCount() {
+  if (countTyped === "") return;
+  if (parseInt(countTyped, 10) === countTarget) {
+    locked = true;
+    playWordCompleteFanfare();
+    setTimeout(completeCountRound, 500);
+    return;
+  }
+  // Wrong entry: buzz, shake the display, and clear it to try again.
+  countWrong++;
+  playWrongSound();
+  const typed = document.getElementById("count-typed");
+  typed.classList.add("shake");
+  setTimeout(() => typed.classList.remove("shake"), 400);
+  countTyped = "";
+  renderCountTyped();
+}
+
+function completeCountRound() {
+  const score = Math.max(0, 100 - countWrong * COUNT_WRONG_PENALTY);
+
+  // A correct round advances the streak that unlocks the keypad level; a
+  // wrong-ish round chips it back, same as the word modes.
+  if (score >= UNLOCK_THRESHOLD_SCORE) {
+    progress.tierStreak = (progress.tierStreak || 0) + 1;
+  } else {
+    progress.tierStreak = Math.max(0, (progress.tierStreak || 0) - STREAK_MISS_PENALTY);
+  }
+  let unlockedNewTier = false;
+  if (progress.tierStreak >= WORDS_TO_UNLOCK && progress.unlockedTier < COUNT_MAX_LEVEL) {
+    progress.unlockedTier++;
+    progress.tierStreak = 0;
+    unlockedNewTier = true;
+  }
+
+  const gameOver = finishRound(score, unlockedNewTier);
+  const delay = unlockedNewTier ? 2200 : 1300;
+  setTimeout(() => {
+    if (gameOver) showSummary();
+    else startCountRound();
+  }, delay);
+}
+
+const COUNT_KEYPAD_ROWS = [
+  ["1", "2", "3"],
+  ["4", "5", "6"],
+  ["7", "8", "9"],
+  ["back", "0", "check"],
+];
+const COUNT_KEY_LABEL = { back: "⌫", check: "✓" };
+
+function buildCountKeypad() {
+  const container = document.getElementById("count-keypad");
+  COUNT_KEYPAD_ROWS.forEach((row) => {
+    const rowEl = document.createElement("div");
+    rowEl.className = "keyboard-row";
+    row.forEach((key) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "key" + (COUNT_KEY_LABEL[key] ? " key-action" : "");
+      btn.textContent = COUNT_KEY_LABEL[key] || key;
+      btn.addEventListener("click", () => handleCountKey(key));
+      rowEl.appendChild(btn);
+    });
+    container.appendChild(rowEl);
+  });
+}
+
+function handleCountKeydown(e) {
+  if (countLevel() !== 2) return;
+  if (/^[0-9]$/.test(e.key)) handleCountKey(e.key);
+  else if (e.key === "Backspace") handleCountKey("back");
+  else if (e.key === "Enter") handleCountKey("check");
+}
+
 // Face reaction images aren't in WORDS but are needed during play, so preload
 // them too - a network drop mid-game shouldn't leave a blank score face.
 const FACE_IMAGES = [
@@ -765,14 +985,17 @@ function onPreloadDone() {
 }
 
 function init() {
-  document.getElementById("hear-btn").addEventListener("click", speakWord);
+  // Wrapped so the click event isn't passed as speakWord's onDone callback.
+  document.getElementById("hear-btn").addEventListener("click", () => speakWord());
   document.getElementById("reset-btn").addEventListener("click", resetProgress);
   document.getElementById("spell-btn").addEventListener("click", startSpell);
   document.getElementById("read-btn").addEventListener("click", startRead);
+  document.getElementById("count-btn").addEventListener("click", startCount);
   document.getElementById("play-again-btn").addEventListener("click", playAgain);
   document.getElementById("menu-btn").addEventListener("click", goToMenu);
   window.addEventListener("keydown", handleKeydown);
   buildOnscreenKeyboard();
+  buildCountKeypad();
   updateScoreboard(null);
   preloadImages(onPreloadDone);
 }
