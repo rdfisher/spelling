@@ -327,6 +327,10 @@ footer {
   background: #5b3fd6;
 }
 
+.start-choice.count {
+  background: #23a55a;
+}
+
 .start-choice.menu {
   background: none;
   color: #5b3fd6;
