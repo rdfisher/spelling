@@ -85,7 +85,8 @@ let readChoices = [];
 // a lower tier), mirroring the word modes.
 const COUNT_TIERS = [
   [1, 5],
-  [6, 12],
+  [6, 10],
+  [11, 15],
 ];
 const COUNT_MAX_TIER = COUNT_TIERS.length;
 const COUNT_TOP_SHARE = 0.7;
