@@ -183,8 +183,11 @@ footer {
   gap: 0.5rem;
 }
 
+/* Hidden for now - "Last"/"Words"/"Avg" read confusingly (especially in the
+   number modes). The stats still accumulate in each mode's saved progress, so
+   this can be brought back or reworked later. */
 #scoreboard {
-  display: flex;
+  display: none;
   gap: 1rem;
   font-size: 0.95rem;
   color: #666;
