@@ -78,18 +78,27 @@ let readWrongTaps = 0;
 // non-touch device (where tapping isn't practical).
 let readChoices = [];
 
-// Count mode: show N (COUNT_MIN..COUNT_MAX) identical pictures and ask how many.
-// Level 1 taps one of COUNT_CHOICES numbers (each within COUNT_SPREAD of the
-// answer); level 2 types the number on a keypad. Level 2 unlocks from level 1
-// via the usual streak, so COUNT_MAX_LEVEL caps the mode at two "tiers".
-const COUNT_MIN = 1;
-const COUNT_MAX = 12;
-const COUNT_CHOICES = 3;
-const COUNT_SPREAD = 2;
-const COUNT_MAX_LEVEL = 2;
+// Count mode: show N identical pictures and type how many on the keypad.
+// Difficulty tiers are count ranges: tier 1 is small counts, tier 2 larger.
+// Tier 2 unlocks from tier 1 via the usual streak. COUNT_TOP_SHARE is how often
+// the current top tier is drawn once more than one is unlocked (the rest review
+// a lower tier), mirroring the word modes.
+const COUNT_TIERS = [
+  [1, 5],
+  [6, 12],
+];
+const COUNT_MAX_TIER = COUNT_TIERS.length;
+const COUNT_TOP_SHARE = 0.7;
 const COUNT_WRONG_PENALTY = 34;
 let countTarget = 0;
 let countWrong = 0;
+
+function countTierForN(n) {
+  for (let i = 0; i < COUNT_TIERS.length; i++) {
+    if (n >= COUNT_TIERS[i][0] && n <= COUNT_TIERS[i][1]) return i + 1;
+  }
+  return 1;
+}
 
 // Maths mode: tier 1 adds two numbers, each MATHS_MIN..MATHS_MAX. Keyboard
 // entry only (no multiple-choice level). Later tiers TBD after playtesting.
@@ -327,7 +336,7 @@ function flashBox(index, kind) {
 
 function handleKeydown(e) {
   if (mode === "count") {
-    if (countLevel() === 2) handleNumpadKeydown(e);
+    handleNumpadKeydown(e);
     return;
   }
   if (mode === "maths") {
@@ -819,30 +828,25 @@ function completeReadRound() {
 }
 
 // -- Count mode ------------------------------------------------------------
-// Level 1 (unlockedTier 1) taps a number; level 2 (unlockedTier 2) types it.
-
-function countLevel() {
-  return progress.unlockedTier >= 2 ? 2 : 1;
-}
+// Keypad entry only. Difficulty is the count range (COUNT_TIERS), gated by
+// progress.unlockedTier.
 
 function startCountRound() {
-  countTarget = COUNT_MIN + Math.floor(Math.random() * (COUNT_MAX - COUNT_MIN + 1));
+  // Favour the top unlocked tier; occasionally review a lower one.
+  let tier = progress.unlockedTier;
+  if (tier > 1 && Math.random() > COUNT_TOP_SHARE) {
+    tier = 1 + Math.floor(Math.random() * (tier - 1));
+  }
+  const [lo, hi] = COUNT_TIERS[tier - 1];
+  countTarget = lo + Math.floor(Math.random() * (hi - lo + 1));
   countWrong = 0;
   entryValue = "";
   locked = false;
-  const level = countLevel();
 
-  document.getElementById("tier-badge").textContent = level === 2 ? "⌨️ Keypad" : "👆 Tap";
+  document.getElementById("tier-badge").textContent = `Tier ${countTierForN(countTarget)}`;
   activeFeedbackEl().textContent = "";
   renderCountObjects(countTarget);
-
-  const choices = document.getElementById("count-choices");
-  const entry = document.getElementById("count-entry");
-  choices.classList.toggle("hidden", level !== 1);
-  entry.classList.toggle("hidden", level !== 2);
-
-  if (level === 1) renderCountChoices();
-  else renderEntry();
+  renderEntry();
 }
 
 // Render `n` copies of one random picture to be counted.
@@ -858,49 +862,7 @@ function renderCountObjects(n) {
   }
 }
 
-// The answer plus two distinct distractors, each within COUNT_SPREAD of it and
-// inside the valid range, all shuffled.
-function buildCountChoices() {
-  const candidates = [];
-  for (let d = -COUNT_SPREAD; d <= COUNT_SPREAD; d++) {
-    const n = countTarget + d;
-    if (d !== 0 && n >= COUNT_MIN && n <= COUNT_MAX) candidates.push(n);
-  }
-  const distractors = shuffle(candidates).slice(0, COUNT_CHOICES - 1);
-  return shuffle([countTarget, ...distractors]);
-}
-
-function renderCountChoices() {
-  const container = document.getElementById("count-choices");
-  container.innerHTML = "";
-  buildCountChoices().forEach((n) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "count-choice";
-    btn.textContent = n;
-    btn.addEventListener("click", () => handleCountChoice(n, btn));
-    container.appendChild(btn);
-  });
-}
-
-function handleCountChoice(n, btn) {
-  if (locked) return;
-  if (n === countTarget) {
-    locked = true;
-    btn.classList.add("correct");
-    playWordCompleteFanfare();
-    setTimeout(completeCountRound, 500);
-    return;
-  }
-  // Wrong: penalize and lock out that tile, let them keep trying.
-  countWrong++;
-  playWrongSound();
-  btn.classList.add("wrong");
-  btn.disabled = true;
-  setTimeout(() => btn.classList.remove("wrong"), 400);
-}
-
-// Shared numeric-keypad entry (Count level 2 + Maths). The typed value shows in
+// Shared numeric-keypad entry (Count + Maths). The typed value shows in
 // the active mode's display; "check" submits to the active mode's handler.
 function entryDisplayEl() {
   return document.getElementById(mode === "maths" ? "maths-typed" : "count-typed");
@@ -957,15 +919,17 @@ function submitCount() {
 function completeCountRound() {
   const score = Math.max(0, 100 - countWrong * COUNT_WRONG_PENALTY);
 
-  // A correct round advances the streak that unlocks the keypad level; a
-  // wrong-ish round chips it back, same as the word modes.
-  if (score >= UNLOCK_THRESHOLD_SCORE) {
-    progress.tierStreak = (progress.tierStreak || 0) + 1;
-  } else {
-    progress.tierStreak = Math.max(0, (progress.tierStreak || 0) - STREAK_MISS_PENALTY);
+  // Only rounds at the current top tier count toward unlocking the next one -
+  // reviewing an easier tier shouldn't help or hurt progress.
+  if (countTierForN(countTarget) === progress.unlockedTier) {
+    if (score >= UNLOCK_THRESHOLD_SCORE) {
+      progress.tierStreak = (progress.tierStreak || 0) + 1;
+    } else {
+      progress.tierStreak = Math.max(0, (progress.tierStreak || 0) - STREAK_MISS_PENALTY);
+    }
   }
   let unlockedNewTier = false;
-  if (progress.tierStreak >= WORDS_TO_UNLOCK && progress.unlockedTier < COUNT_MAX_LEVEL) {
+  if (progress.tierStreak >= WORDS_TO_UNLOCK && progress.unlockedTier < COUNT_MAX_TIER) {
     progress.unlockedTier++;
     progress.tierStreak = 0;
     unlockedNewTier = true;
