@@ -104,7 +104,7 @@ function countTierForN(n) {
 // Maths mode: tier 1 adds two numbers, each MATHS_MIN..MATHS_MAX. Keyboard
 // entry only (no multiple-choice level). Later tiers TBD after playtesting.
 const MATHS_MIN = 1;
-const MATHS_MAX = 9;
+const MATHS_MAX = 5;
 const MATHS_WRONG_PENALTY = 34;
 let mathsA = 0;
 let mathsB = 0;
