@@ -112,7 +112,7 @@ let mathsWrong = 0;
 
 // After this many wrong answers on a maths round, show the sum a second way:
 // each addend drawn as a stack of coloured squares, so it can be counted out.
-const MATHS_HINT_AFTER = 2;
+const MATHS_HINT_AFTER = 1;
 // Numberblocks (BBC show) colours, used for those hint squares: 1 is red, 2 is
 // orange, and so on, so a block's colour matches the character on screen. Only
 // 1-5 are mapped because Maths mode adds numbers in that range; anything without
@@ -1018,7 +1018,7 @@ function submitMaths() {
     return;
   }
   mathsWrong++;
-  // Two wrong tries in and still stuck: show the sum as coloured blocks so it
+  // One wrong try in and still stuck: show the sum as coloured blocks so it
   // can be counted out. Once shown it stays up for the rest of the round.
   if (mathsWrong >= MATHS_HINT_AFTER) showMathsBlocks();
   rejectEntry();
