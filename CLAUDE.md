@@ -63,3 +63,11 @@ git log --oneline origin/main..HEAD   # your branch's unique commits
 - If already up to date, carry on.
 
 Do this rather than assuming the freshly-cloned branch reflects the latest code.
+
+## Git: merge PRs with rebase, not merge or squash
+
+When a pull request lands, use **Rebase and merge** — not "Create a merge
+commit" or "Squash and merge". This keeps `main` a linear history of the
+original commits, which is what the "check against origin/main" steps above
+assume (a squashed or merged PR rewrites/collapses the commits, making a stale
+branch harder to reconcile).
