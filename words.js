@@ -2,7 +2,7 @@
 // tier 1 = 3-4 letter, tier 2 = 5-6 letter,
 // tier 3 = 7-8 letter, tier 4 = 9-10 letter words.
 // Images: Twemoji (CC-BY 4.0) - see ATTRIBUTIONS.md
-const WORDS = [
+export const WORDS = [
   { word: "cat", tier: 1, image: "assets/images/cat.svg" },
   { word: "dog", tier: 1, image: "assets/images/dog.svg" },
   { word: "sun", tier: 1, image: "assets/images/sun.svg" },
@@ -85,3 +85,5 @@ const WORDS = [
   { word: "crocodile", tier: 4, image: "assets/images/crocodile.svg" },
   { word: "watermelon", tier: 4, image: "assets/images/watermelon.svg" },
 ];
+
+export const MAX_TIER = Math.max(...WORDS.map((w) => w.tier));
