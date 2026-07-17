@@ -1005,9 +1005,51 @@ function startMathsRound() {
   locked = false;
   document.getElementById("tier-badge").textContent = "➕ Add";
   activeFeedbackEl().textContent = "";
-  document.getElementById("maths-sum").textContent = `${mathsA} + ${mathsB} =`;
-  hideMathsBlocks();
+  renderMathsQuestion();
   renderEntry();
+}
+
+// Build the sum as a row of columns - each number/operator on top, the answer's
+// "?" (the typed value) last - so a stack of coloured blocks can later slot in
+// underneath each number column, aligned right below its digit.
+function renderMathsQuestion() {
+  const q = document.getElementById("maths-question");
+  q.innerHTML = "";
+  q.appendChild(mathsNumberCol(mathsA));
+  q.appendChild(mathsOpCol("+"));
+  q.appendChild(mathsNumberCol(mathsB));
+  q.appendChild(mathsOpCol("="));
+  q.appendChild(mathsTypedCol());
+}
+
+function mathsTopCell(text, id) {
+  const top = document.createElement("span");
+  top.className = "maths-top";
+  if (id) top.id = id;
+  top.textContent = text;
+  return top;
+}
+
+function mathsNumberCol(n) {
+  const col = document.createElement("div");
+  col.className = "maths-col maths-num";
+  col.dataset.n = n;
+  col.appendChild(mathsTopCell(String(n)));
+  return col;
+}
+
+function mathsOpCol(symbol) {
+  const col = document.createElement("div");
+  col.className = "maths-col";
+  col.appendChild(mathsTopCell(symbol));
+  return col;
+}
+
+function mathsTypedCol() {
+  const col = document.createElement("div");
+  col.className = "maths-col";
+  col.appendChild(mathsTopCell("?", "maths-typed"));
+  return col;
 }
 
 function submitMaths() {
@@ -1038,30 +1080,15 @@ function buildBlockStack(n) {
   return stack;
 }
 
-function hideMathsBlocks() {
-  const container = document.getElementById("maths-blocks");
-  container.classList.add("hidden");
-  container.innerHTML = "";
-}
-
-// Draw the sum a second way - e.g. 1 + 2 as one red block plus two orange
-// blocks = ? - to help count the answer out.
+// Slot a stack of coloured blocks under each number in the sum - e.g. one red
+// block under the 1, two orange blocks under the 2 - so the answer can be
+// counted out. Called once a wrong answer has been given; the stacks are wiped
+// when the next round rebuilds the question.
 function showMathsBlocks() {
-  const container = document.getElementById("maths-blocks");
-  if (!container.classList.contains("hidden")) return; // already up
-  container.innerHTML = "";
-  const addOp = (text, extraClass) => {
-    const op = document.createElement("span");
-    op.className = "block-op" + (extraClass ? " " + extraClass : "");
-    op.textContent = text;
-    container.appendChild(op);
-  };
-  container.appendChild(buildBlockStack(mathsA));
-  addOp("+");
-  container.appendChild(buildBlockStack(mathsB));
-  addOp("=");
-  addOp("?", "block-q");
-  container.classList.remove("hidden");
+  document.querySelectorAll("#maths-question .maths-num").forEach((col) => {
+    if (col.querySelector(".block-stack")) return; // already shown this round
+    col.appendChild(buildBlockStack(parseInt(col.dataset.n, 10)));
+  });
 }
 
 function completeMathsRound() {
