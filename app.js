@@ -110,6 +110,25 @@ let mathsA = 0;
 let mathsB = 0;
 let mathsWrong = 0;
 
+// After this many wrong answers on a maths round, show the sum a second way:
+// each addend drawn as a stack of coloured squares, so it can be counted out.
+const MATHS_HINT_AFTER = 2;
+// Numberblocks (BBC show) colours, used for those hint squares: 1 is red, 2 is
+// orange, and so on, so a block's colour matches the character on screen. Only
+// 1-5 are mapped because Maths mode adds numbers in that range; anything without
+// a mapping falls back to grey until its show colour is added here.
+const NUMBERBLOCK_COLORS = {
+  1: "#e02a2a", // One - red
+  2: "#ef7d1a", // Two - orange
+  3: "#f4c91f", // Three - yellow
+  4: "#54b948", // Four - green
+  5: "#3fb3e6", // Five - blue
+};
+const BLOCK_FALLBACK_COLOR = "#b0b0c0";
+function blockColor(n) {
+  return NUMBERBLOCK_COLORS[n] || BLOCK_FALLBACK_COLOR;
+}
+
 // Shared numeric-keypad entry, used by Count level 2 and Maths. Only one mode
 // is ever active, so a single typed buffer suffices.
 let entryValue = "";
@@ -987,6 +1006,7 @@ function startMathsRound() {
   document.getElementById("tier-badge").textContent = "➕ Add";
   activeFeedbackEl().textContent = "";
   document.getElementById("maths-sum").textContent = `${mathsA} + ${mathsB} =`;
+  hideMathsBlocks();
   renderEntry();
 }
 
@@ -998,7 +1018,50 @@ function submitMaths() {
     return;
   }
   mathsWrong++;
+  // Two wrong tries in and still stuck: show the sum as coloured blocks so it
+  // can be counted out. Once shown it stays up for the rest of the round.
+  if (mathsWrong >= MATHS_HINT_AFTER) showMathsBlocks();
   rejectEntry();
+}
+
+// One addend as a stack of squares, all in that number's Numberblocks colour.
+function buildBlockStack(n) {
+  const stack = document.createElement("div");
+  stack.className = "block-stack";
+  const color = blockColor(n);
+  for (let i = 0; i < n; i++) {
+    const sq = document.createElement("span");
+    sq.className = "block-square";
+    sq.style.background = color;
+    stack.appendChild(sq);
+  }
+  return stack;
+}
+
+function hideMathsBlocks() {
+  const container = document.getElementById("maths-blocks");
+  container.classList.add("hidden");
+  container.innerHTML = "";
+}
+
+// Draw the sum a second way - e.g. 1 + 2 as one red block plus two orange
+// blocks = ? - to help count the answer out.
+function showMathsBlocks() {
+  const container = document.getElementById("maths-blocks");
+  if (!container.classList.contains("hidden")) return; // already up
+  container.innerHTML = "";
+  const addOp = (text, extraClass) => {
+    const op = document.createElement("span");
+    op.className = "block-op" + (extraClass ? " " + extraClass : "");
+    op.textContent = text;
+    container.appendChild(op);
+  };
+  container.appendChild(buildBlockStack(mathsA));
+  addOp("+");
+  container.appendChild(buildBlockStack(mathsB));
+  addOp("=");
+  addOp("?", "block-q");
+  container.classList.remove("hidden");
 }
 
 function completeMathsRound() {
