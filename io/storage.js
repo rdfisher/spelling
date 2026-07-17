@@ -1,6 +1,6 @@
 // Persistence for game progress. Owns the localStorage key and the shape of
 // the saved progress object, so the rest of the app never touches storage.
-import { MAX_TIER } from "../words.js?v=15";
+import { MAX_TIER } from "../words.js?v=16";
 
 const STORAGE_KEY = "spelling-game-progress-v1";
 

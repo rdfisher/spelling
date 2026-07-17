@@ -22,7 +22,6 @@ function els() {
       scoreFaceOverlay: document.getElementById("score-face-overlay"),
       scoreFaceImage: document.getElementById("score-face-image"),
       tierBanner: document.getElementById("tier-unlock-banner"),
-      keyboard: document.getElementById("onscreen-keyboard"),
       startOverlay: document.getElementById("start-overlay"),
     };
   }
@@ -129,21 +128,4 @@ function showTierBanner(e) {
 
 export function hideStartOverlay() {
   els().startOverlay.classList.add("hidden");
-}
-
-export function buildKeyboard(rows, onKey) {
-  const e = els();
-  rows.forEach((row) => {
-    const rowEl = document.createElement("div");
-    rowEl.className = "keyboard-row";
-    row.split("").forEach((letter) => {
-      const key = document.createElement("button");
-      key.type = "button";
-      key.className = "key";
-      key.textContent = letter;
-      key.addEventListener("click", () => onKey(letter));
-      rowEl.appendChild(key);
-    });
-    e.keyboard.appendChild(rowEl);
-  });
 }
