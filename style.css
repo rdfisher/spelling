@@ -613,18 +613,28 @@ footer {
   margin: 0 0 0.6rem;
 }
 
+/* The sum is a row of columns aligned at the top, so the digits sit on one line
+   and each number's block stack hangs directly beneath its digit. */
 #maths-question {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   justify-content: center;
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
 
-#maths-sum {
+.maths-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.maths-top {
   font-size: clamp(2.4rem, 11vw, 3.4rem);
   font-weight: 800;
   color: #5b3fd6;
+  line-height: 1;
 }
 
 #maths-feedback {
@@ -635,45 +645,22 @@ footer {
   margin-bottom: 0.5rem;
 }
 
-/* Numberblocks-style block hint, shown after two wrong answers. Each addend is
-   a stack of same-coloured squares; the id carries a display rule so it needs
-   an explicit .hidden override to stay hidden until then. */
-#maths-blocks {
+/* A number's block stack, slotted under its digit once the hint shows: squares
+   in that number's Numberblocks colour, stacked downward so they can be counted
+   from the digit down. */
+.block-stack {
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 0.5rem;
-  margin: 0 0 1rem;
+  flex-direction: column;
+  gap: 3px;
   animation: pop 0.4s ease;
 }
 
-#maths-blocks.hidden {
-  display: none;
-}
-
-.block-stack {
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 3px;
-}
-
 .block-square {
-  width: clamp(1.5rem, 8vw, 2.2rem);
-  height: clamp(1.5rem, 8vw, 2.2rem);
+  width: clamp(1.4rem, 7vw, 2rem);
+  height: clamp(1.4rem, 7vw, 2rem);
   border-radius: 6px;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4),
     0 2px 4px rgba(0, 0, 0, 0.15);
-}
-
-.block-op {
-  font-size: clamp(1.6rem, 8vw, 2.4rem);
-  font-weight: 800;
-  color: #5b3fd6;
-  align-self: center;
-}
-
-.block-op.block-q {
-  color: var(--accent);
 }
 
 #onscreen-keyboard {
