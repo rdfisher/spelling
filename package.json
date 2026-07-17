@@ -1,0 +1,11 @@
+{
+  "name": "spelling",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Miles' Spelling Game",
+  "scripts": {
+    "test": "node --import ./scripts/register-hooks.mjs --test 'test/**/*.test.mjs'",
+    "test:coverage": "node --import ./scripts/register-hooks.mjs --test --experimental-test-coverage 'test/**/*.test.mjs'"
+  }
+}
